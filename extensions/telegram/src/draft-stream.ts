@@ -181,6 +181,7 @@ export function createTelegramDraftStream(params: {
   let lastSentParseMode: "HTML" | undefined;
   let previewRevision = 0;
   let generation = 0;
+  let textBaseOffset = 0;
   type PreviewSendParams = {
     renderedText: string;
     renderedParseMode: "HTML" | undefined;
@@ -297,13 +298,40 @@ export function createTelegramDraftStream(params: {
     if (!trimmed) {
       return false;
     }
-    const rendered = params.renderText?.(trimmed) ?? { text: trimmed };
+    // Auto-reset offset when fresh content arrives (shorter than offset = new step)
+    if (textBaseOffset > 0 && trimmed.length <= textBaseOffset) {
+      textBaseOffset = 0;
+    }
+    const sliced = textBaseOffset > 0 ? trimmed.slice(textBaseOffset).trimStart() : trimmed;
+    if (!sliced) {
+      return false;
+    }
+    const rendered = params.renderText?.(sliced) ?? { text: sliced };
     const renderedText = rendered.text.trimEnd();
     const renderedParseMode = rendered.parseMode;
     if (!renderedText) {
       return false;
     }
     if (renderedText.length > maxChars) {
+      // Chain to a new message rather than stopping. deliveredLen is the length of content
+      // already shown in the current message (offset-relative, not total accumulated length).
+      const deliveredRaw = lastDeliveredText.length;
+      const deliveredLen =
+        deliveredRaw > textBaseOffset ? deliveredRaw - textBaseOffset : lastSentText.length;
+      if (deliveredLen > 0) {
+        textBaseOffset += deliveredLen;
+        forceNewMessage();
+        params.log?.(
+          `telegram stream preview overflow (${renderedText.length} > ${maxChars}); chaining to new message (offset=${textBaseOffset})`,
+        );
+        const overflowSlice = trimmed.slice(textBaseOffset).trimStart();
+        if (overflowSlice) {
+          const overflowRendered = params.renderText?.(overflowSlice) ?? { text: overflowSlice };
+          if (overflowRendered.text.trimEnd().length <= maxChars) {
+            return sendOrEditStreamMessage(trimmed);
+          }
+        }
+      }
       streamState.stopped = true;
       params.warn?.(
         `telegram stream preview stopped (text length ${renderedText.length} > ${maxChars})`,

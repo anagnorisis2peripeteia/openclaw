@@ -26,4 +26,14 @@ describe("splitTelegramReasoningText", () => {
   it("does not emit partial reasoning tag prefixes", () => {
     expect(splitTelegramReasoningText("  <thi")).toEqual({});
   });
+
+  it("suppresses answer leakage when closing tag is incomplete during streaming", () => {
+    // As </thinking> arrives char-by-char, extractThinking captures content via the
+    // complete opening tag but strict stripReasoningTags can't strip the partial closer,
+    // returning the original text as strippedAnswer. Without the fix this leaks into
+    // the answer lane as raw <thinking>-tagged content.
+    const result = splitTelegramReasoningText("<thinking>Some reasoning</thinking");
+    expect(result.reasoningText).toBeDefined();
+    expect(result.answerText).toBeUndefined();
+  });
 });

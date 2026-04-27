@@ -74,6 +74,7 @@ import {
 } from "./lane-delivery.js";
 import {
   createTelegramReasoningStepState,
+  REASONING_MESSAGE_PREFIX,
   splitTelegramReasoningText,
 } from "./reasoning-lane-coordinator.js";
 import { editMessageTelegram } from "./send.js";
@@ -328,6 +329,20 @@ export const dispatchTelegramMessage = async ({
     text: renderTelegramHtmlText(text, { tableMode }),
     parseMode: "HTML" as const,
   });
+  // Reasoning continuations need a header and italic re-wrap since the overflow slice
+  // is cut from the middle of the accumulated italic span and loses its opening marker.
+  const renderReasoningDraftPreview = (text: string) => {
+    const isFirstMessage = text.startsWith(REASONING_MESSAGE_PREFIX);
+    if (isFirstMessage) {
+      return renderDraftPreview(text);
+    }
+    const stripped = text.replace(/^_+/, "").replace(/_+$/, "").trim();
+    const prefixed = `Reasoning (cont.):\n_${stripped}_`;
+    return {
+      text: renderTelegramHtmlText(prefixed, { tableMode }),
+      parseMode: "HTML" as const,
+    };
+  };
   const accountBlockStreamingEnabled =
     resolveChannelStreamingBlockEnabled(telegramCfg) ??
     cfg.agents?.defaults?.blockStreamingDefault === "on";
@@ -351,7 +366,11 @@ export const dispatchTelegramMessage = async ({
   const mediaLocalRoots = getAgentScopedMediaLocalRoots(cfg, route.agentId);
   const archivedAnswerPreviews: ArchivedPreview[] = [];
   const archivedReasoningPreviewIds: number[] = [];
-  const createDraftLane = (laneName: LaneName, enabled: boolean): DraftLaneState => {
+  const createDraftLane = (
+    laneName: LaneName,
+    enabled: boolean,
+    renderText: (text: string) => { text: string; parseMode?: "HTML" } = renderDraftPreview,
+  ): DraftLaneState => {
     const stream = enabled
       ? (telegramDeps.createTelegramDraftStream ?? createTelegramDraftStream)({
           api: bot.api,
@@ -361,7 +380,7 @@ export const dispatchTelegramMessage = async ({
           previewTransport: useMessagePreviewTransportForDm ? "message" : "auto",
           replyToMessageId: draftReplyToMessageId,
           minInitialChars: draftMinInitialChars,
-          renderText: renderDraftPreview,
+          renderText,
           onSupersededPreview:
             laneName === "answer" || laneName === "reasoning"
               ? (preview) => {
@@ -390,7 +409,7 @@ export const dispatchTelegramMessage = async ({
   };
   const lanes: Record<LaneName, DraftLaneState> = {
     answer: createDraftLane("answer", canStreamAnswerDraft),
-    reasoning: createDraftLane("reasoning", canStreamReasoningDraft),
+    reasoning: createDraftLane("reasoning", canStreamReasoningDraft, renderReasoningDraftPreview),
   };
   const activePreviewLifecycleByLane: Record<LaneName, LanePreviewLifecycle> = {
     answer: "transient",

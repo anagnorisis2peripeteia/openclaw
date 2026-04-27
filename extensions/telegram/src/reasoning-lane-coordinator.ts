@@ -6,7 +6,7 @@ import {
   stripReasoningTagsFromText,
 } from "openclaw/plugin-sdk/text-runtime";
 
-const REASONING_MESSAGE_PREFIX = "Reasoning:\n";
+export const REASONING_MESSAGE_PREFIX = "Reasoning:\n";
 const REASONING_TAG_PREFIXES = [
   "<think",
   "<thinking",
@@ -86,7 +86,9 @@ export function splitTelegramReasoningText(text?: string): TelegramReasoningSpli
   }
 
   const reasoningText = taggedReasoning ? formatReasoningMessage(taggedReasoning) : undefined;
-  const answerText = strippedAnswer || undefined;
+  // Suppress answer if stripping changed nothing — partial closing tag mid-stream
+  // would otherwise leak raw <thinking>-tagged content into the answer lane.
+  const answerText = strippedAnswer && strippedAnswer !== text ? strippedAnswer : undefined;
   return { reasoningText, answerText };
 }
 

@@ -694,4 +694,83 @@ describe("draft stream initial message debounce", () => {
       expect(api.sendMessage).toHaveBeenCalledWith(123, "Hi", undefined);
     });
   });
+
+  describe("overflow chaining", () => {
+    it("chains to a new message when rendered text exceeds maxChars", async () => {
+      const api = createMockDraftApi();
+      api.sendMessage
+        .mockResolvedValueOnce({ message_id: 17 })
+        .mockResolvedValueOnce({ message_id: 42 });
+      const stream = createDraftStream(api, {
+        maxChars: 50,
+        renderText: (text) => ({ text, parseMode: "HTML" as const }),
+      });
+
+      // Fill message 1 with 40 chars
+      stream.update("A".repeat(40));
+      await stream.flush();
+      expect(api.sendMessage).toHaveBeenCalledTimes(1);
+
+      // Grow to 70 chars total — overflow slice (chars 40-70) is 30 chars, fits in 50
+      stream.update("A".repeat(40) + "B".repeat(30));
+      await stream.flush();
+
+      expect(api.sendMessage).toHaveBeenCalledTimes(2);
+      const secondCall = api.sendMessage.mock.calls[1];
+      expect(secondCall?.[1]).toBe("B".repeat(30));
+    });
+
+    it("chains correctly on 3rd and 4th messages (offset math)", async () => {
+      const api = createMockDraftApi();
+      api.sendMessage
+        .mockResolvedValueOnce({ message_id: 1 })
+        .mockResolvedValueOnce({ message_id: 2 })
+        .mockResolvedValueOnce({ message_id: 3 });
+      const stream = createDraftStream(api, {
+        maxChars: 50,
+        renderText: (text) => ({ text, parseMode: "HTML" as const }),
+      });
+
+      // Three successive overflows — each message gets its own 40-char chunk
+      stream.update("A".repeat(40));
+      await stream.flush();
+
+      stream.update("A".repeat(40) + "B".repeat(40));
+      await stream.flush();
+
+      stream.update("A".repeat(40) + "B".repeat(40) + "C".repeat(40));
+      await stream.flush();
+
+      expect(api.sendMessage).toHaveBeenCalledTimes(3);
+      expect(api.sendMessage.mock.calls[2]?.[1]).toBe("C".repeat(40));
+    });
+
+    it("resets offset for fresh content after external forceNewMessage", async () => {
+      const api = createMockDraftApi();
+      api.sendMessage
+        .mockResolvedValueOnce({ message_id: 1 })
+        .mockResolvedValueOnce({ message_id: 2 })
+        .mockResolvedValueOnce({ message_id: 3 });
+      const stream = createDraftStream(api, {
+        maxChars: 50,
+        renderText: (text) => ({ text, parseMode: "HTML" as const }),
+      });
+
+      // Trigger one overflow to set textBaseOffset
+      stream.update("A".repeat(40));
+      await stream.flush();
+      stream.update("A".repeat(40) + "B".repeat(30));
+      await stream.flush();
+      expect(api.sendMessage).toHaveBeenCalledTimes(2);
+
+      // External forceNewMessage (step boundary) then fresh short content
+      stream.forceNewMessage();
+      stream.update("Fresh start");
+      await stream.flush();
+
+      // Should send "Fresh start" as the full content, not slice it by the old offset
+      expect(api.sendMessage).toHaveBeenCalledTimes(3);
+      expect(api.sendMessage.mock.calls[2]?.[1]).toBe("Fresh start");
+    });
+  });
 });
