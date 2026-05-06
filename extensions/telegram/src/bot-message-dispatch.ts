@@ -1008,42 +1008,6 @@ export const dispatchTelegramMessage = async ({
             if (statusReactionController && toolName) {
               await statusReactionController.setTool(toolName);
             }
-            pushPreviewToolProgress(toolName ? `tool: ${toolName}` : "tool running");
-          },
-          onItemEvent: async (payload) => {
-            pushPreviewToolProgress(
-              payload.progressText ?? payload.summary ?? payload.title ?? payload.name,
-            );
-          },
-          onPlanUpdate: async (payload) => {
-            if (payload.phase !== "update") {
-              return;
-            }
-            pushPreviewToolProgress(payload.explanation ?? payload.steps?.[0] ?? "planning");
-          },
-          onApprovalEvent: async (payload) => {
-            if (payload.phase !== "requested") {
-              return;
-            }
-            pushPreviewToolProgress(
-              payload.command ? `approval: ${payload.command}` : "approval requested",
-            );
-          },
-          onCommandOutput: async (payload) => {
-            if (payload.phase !== "end") {
-              return;
-            }
-            pushPreviewToolProgress(
-              payload.name
-                ? `${payload.name}${payload.exitCode === 0 ? " ✓" : payload.exitCode != null ? ` (exit ${payload.exitCode})` : ""}`
-                : payload.title,
-            );
-          },
-          onPatchSummary: async (payload) => {
-            if (payload.phase !== "end") {
-              return;
-            }
-            pushPreviewToolProgress(payload.summary ?? payload.title ?? "patch applied");
           },
           onCompactionStart:
             statusReactionController || answerLane.stream

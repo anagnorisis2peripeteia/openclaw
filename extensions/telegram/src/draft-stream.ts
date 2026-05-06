@@ -11,10 +11,133 @@ import { normalizeTelegramReplyToMessageId } from "./outbound-params.js";
 const TELEGRAM_STREAM_MAX_CHARS = 4096;
 const DEFAULT_THROTTLE_MS = 1000;
 const TELEGRAM_DRAFT_ID_MAX = 2_147_483_647;
+const CHAT_SEND_INTERVAL_MS = 3000;
 const THREAD_NOT_FOUND_RE = /400:\s*Bad Request:\s*message thread not found/i;
 const DRAFT_METHOD_UNAVAILABLE_RE =
   /(unknown method|method .*not (found|available|supported)|unsupported)/i;
 const DRAFT_CHAT_UNSUPPORTED_RE = /(can't be used|can be used only)/i;
+
+// Adaptive throttle: shared across bundled chunks so 429 backoff is respected globally.
+interface AdaptiveThrottleState {
+  currentMs: number;
+  minMs: number;
+  maxMs: number;
+  pausedUntil: number;
+  decayInterval: ReturnType<typeof setInterval> | null;
+}
+const ADAPTIVE_THROTTLE_KEY = Symbol.for("openclaw.adaptiveThrottle");
+const _adaptiveThrottleState: AdaptiveThrottleState =
+  (globalThis as Record<PropertyKey, unknown>)[ADAPTIVE_THROTTLE_KEY] as AdaptiveThrottleState ?? {
+    currentMs: 1000,
+    minMs: 1000,
+    maxMs: 120000,
+    pausedUntil: 0,
+    decayInterval: null,
+  };
+(globalThis as Record<PropertyKey, unknown>)[ADAPTIVE_THROTTLE_KEY] = _adaptiveThrottleState;
+
+// Per-chat send gate: enforces a minimum interval between sends to the same chat,
+// with fair rotation across concurrent streams.
+interface GateStreamInfo {
+  lastSent: number;
+  lastAttempt: number;
+  wantsSend: boolean;
+}
+interface ChatGate {
+  lastSentAt: number;
+  streams: Map<number, GateStreamInfo>;
+}
+const PER_CHAT_GATE_KEY = Symbol.for("openclaw.perChatSendGate");
+const _perChatSendGate: Map<string | number, ChatGate> =
+  (globalThis as Record<PropertyKey, unknown>)[PER_CHAT_GATE_KEY] as Map<string | number, ChatGate> ??
+  new Map<string | number, ChatGate>();
+(globalThis as Record<PropertyKey, unknown>)[PER_CHAT_GATE_KEY] = _perChatSendGate;
+
+const GATE_STREAM_COUNTER_KEY = Symbol.for("openclaw.gateStreamIdCounter");
+let _gateStreamIdCounter: number =
+  ((globalThis as Record<PropertyKey, unknown>)[GATE_STREAM_COUNTER_KEY] as number) ?? 0;
+
+function releaseGateSlot(chatId: string | number, streamId: number): void {
+  const gate = _perChatSendGate.get(chatId);
+  if (!gate) return;
+  let mostRecentOther = 0;
+  for (const [id, s] of gate.streams) {
+    if (id !== streamId && s.lastSent > mostRecentOther) mostRecentOther = s.lastSent;
+  }
+  gate.lastSentAt = mostRecentOther;
+}
+
+function acquireChatSendGate(
+  chatId: string | number,
+  streamId: number,
+  isFinal: boolean,
+): boolean {
+  let gate = _perChatSendGate.get(chatId);
+  if (!gate) {
+    gate = { lastSentAt: 0, streams: new Map() };
+    _perChatSendGate.set(chatId, gate);
+  }
+  const now = Date.now();
+  const elapsed = now - gate.lastSentAt;
+  let info = gate.streams.get(streamId);
+  if (!info) {
+    info = { lastSent: 0, lastAttempt: 0, wantsSend: false };
+    gate.streams.set(streamId, info);
+  }
+  info.wantsSend = true;
+  info.lastAttempt = now;
+  if (elapsed < CHAT_SEND_INTERVAL_MS) return false;
+  for (const [, s] of gate.streams) {
+    if (now - s.lastAttempt > CHAT_SEND_INTERVAL_MS * 2) s.wantsSend = false;
+  }
+  let pickId: number | null = null;
+  let oldestSent = Infinity;
+  for (const [id, s] of gate.streams) {
+    if (!s.wantsSend) continue;
+    if (s.lastSent < oldestSent) {
+      oldestSent = s.lastSent;
+      pickId = id;
+    }
+  }
+  if (pickId !== null && pickId !== streamId) return false;
+  info.lastSent = now;
+  info.wantsSend = false;
+  gate.lastSentAt = now;
+  if (isFinal) gate.streams.delete(streamId);
+  return true;
+}
+
+function getAdaptiveThrottleMs(baseMs: number): number {
+  return Math.max(baseMs, _adaptiveThrottleState.currentMs);
+}
+
+function is429Error(err: unknown): boolean {
+  const s = String(err);
+  return /429|too many requests/i.test(s);
+}
+
+function onTelegramRateLimit(retryAfterSec: number): void {
+  const backoffMs = retryAfterSec * 1000 + 500;
+  _adaptiveThrottleState.pausedUntil = Date.now() + backoffMs;
+  _adaptiveThrottleState.currentMs = Math.min(
+    _adaptiveThrottleState.maxMs,
+    Math.max(_adaptiveThrottleState.currentMs, backoffMs),
+  );
+  if (!_adaptiveThrottleState.decayInterval) {
+    _adaptiveThrottleState.decayInterval = setInterval(() => {
+      _adaptiveThrottleState.currentMs = Math.max(
+        _adaptiveThrottleState.minMs,
+        Math.floor(_adaptiveThrottleState.currentMs / 2),
+      );
+      if (_adaptiveThrottleState.currentMs <= _adaptiveThrottleState.minMs) {
+        if (_adaptiveThrottleState.decayInterval) {
+          clearInterval(_adaptiveThrottleState.decayInterval);
+          _adaptiveThrottleState.decayInterval = null;
+        }
+      }
+    }, 10000);
+  }
+}
 
 type TelegramSendMessageDraft = (
   chatId: Parameters<Bot["api"]["sendMessage"]>[0],
@@ -130,6 +253,10 @@ export function createTelegramDraftStream(params: {
   throttleMs?: number;
   /** Minimum chars before sending first message (debounce for push notifications) */
   minInitialChars?: number;
+  /** Skip minInitialChars (used for reasoning lane). */
+  skipMinInitialChars?: boolean;
+  /** Optional gate check before acquiring the per-chat send gate. */
+  beforeGate?: () => boolean;
   /** Optional preview renderer (e.g. markdown -> HTML + parse mode). */
   renderText?: (text: string) => TelegramDraftPreview;
   /** Called when a late send resolves after forceNewMessage() switched generations. */
@@ -142,8 +269,10 @@ export function createTelegramDraftStream(params: {
     TELEGRAM_STREAM_MAX_CHARS,
   );
   const throttleMs = Math.max(250, params.throttleMs ?? DEFAULT_THROTTLE_MS);
-  const minInitialChars = params.minInitialChars;
+  const minInitialChars = params.skipMinInitialChars ? null : params.minInitialChars;
   const chatId = params.chatId;
+  const _streamId = ++_gateStreamIdCounter;
+  (globalThis as Record<PropertyKey, unknown>)[GATE_STREAM_COUNTER_KEY] = _gateStreamIdCounter;
   const requestedPreviewTransport = params.previewTransport ?? "auto";
   const prefersDraftTransport =
     requestedPreviewTransport === "draft"
@@ -173,6 +302,9 @@ export function createTelegramDraftStream(params: {
 
   const streamState = { stopped: false, final: false };
   let messageSendAttempted = false;
+  let sendFailureCount = 0;
+  let rateLimitedUntilMs = 0;
+  let pendingForceNewMessage = false;
   let streamMessageId: number | undefined;
   let streamDraftId = usesDraftTransport ? allocateTelegramDraftId() : undefined;
   let previewTransport: "message" | "draft" = usesDraftTransport ? "draft" : "message";
@@ -253,8 +385,27 @@ export function createTelegramDraftStream(params: {
     }
     const sentMessageId = sent?.message_id;
     if (typeof sentMessageId !== "number" || !Number.isFinite(sentMessageId)) {
-      streamState.stopped = true;
-      params.warn?.("telegram stream preview stopped (missing message id from sendMessage)");
+      sendFailureCount++;
+      releaseGateSlot(chatId, _streamId);
+      if (sendFailureCount >= 3) {
+        streamState.stopped = true;
+        params.api
+          .sendMessage(
+            chatId,
+            "⚠️ Stream delivery failed — message_id missing after 3 attempts",
+            threadParams ?? {},
+          )
+          .catch(() => {});
+        params.warn?.(
+          "telegram stream preview stopped after retry limit (3 attempts, no message_id)",
+        );
+        return false;
+      }
+      params.warn?.(
+        `telegram stream preview: missing message_id (attempt ${sendFailureCount}/3), will retry`,
+      );
+      messageSendAttempted = false;
+      resetStreamToNewMessage();
       return false;
     }
     const normalizedMessageId = Math.trunc(sentMessageId);
@@ -290,10 +441,40 @@ export function createTelegramDraftStream(params: {
     return true;
   };
 
+  const resetStreamToNewMessage = () => {
+    streamState.stopped = false;
+    streamState.final = false;
+    generation += 1;
+    messageSendAttempted = false;
+    streamMessageId = undefined;
+    if (previewTransport === "draft") {
+      streamDraftId = allocateTelegramDraftId();
+    }
+    lastSentText = "";
+    lastSentParseMode = undefined;
+    loop.resetPending();
+    loop.resetThrottleWindow();
+  };
+
   const sendOrEditStreamMessage = async (text: string): Promise<boolean> => {
     if (streamState.stopped && !streamState.final) {
       return false;
     }
+    // Rate limit backoff: skip sends until backoff expires
+    if (rateLimitedUntilMs > 0) {
+      const remaining = rateLimitedUntilMs - Date.now();
+      if (remaining > 0) {
+        return false;
+      }
+      rateLimitedUntilMs = 0;
+      if (pendingForceNewMessage) {
+        pendingForceNewMessage = false;
+        textBaseOffset = 0;
+        resetStreamToNewMessage();
+      }
+    }
+    if (params.beforeGate && !params.beforeGate()) return false;
+    if (!acquireChatSendGate(chatId, _streamId, streamState.final)) return false;
     const trimmed = text.trimEnd();
     if (!trimmed) {
       return false;
@@ -313,30 +494,34 @@ export function createTelegramDraftStream(params: {
       return false;
     }
     if (renderedText.length > maxChars) {
-      // Chain to a new message rather than stopping. deliveredLen is the length of content
-      // already shown in the current message (offset-relative, not total accumulated length).
-      const deliveredRaw = lastDeliveredText.length;
+      const deliveredRaw = lastDeliveredText.length || 0;
       const deliveredLen =
         deliveredRaw > textBaseOffset ? deliveredRaw - textBaseOffset : lastSentText.length;
       if (deliveredLen > 0) {
         textBaseOffset += deliveredLen;
-        forceNewMessage();
-        params.log?.(
-          `telegram stream preview overflow (${renderedText.length} > ${maxChars}); chaining to new message (offset=${textBaseOffset})`,
+      } else {
+        const fallbackOffset =
+          trimmed.length > maxChars
+            ? Math.max(textBaseOffset, trimmed.length - Math.floor(maxChars * 0.8))
+            : textBaseOffset;
+        textBaseOffset = fallbackOffset;
+        params.warn?.(
+          `telegram stream preview overflow with no delivery state (post-429?); forcing new message from offset=${textBaseOffset}`,
         );
-        const overflowSlice = trimmed.slice(textBaseOffset).trimStart();
-        if (overflowSlice) {
-          const overflowRendered = params.renderText?.(overflowSlice) ?? { text: overflowSlice };
-          if (overflowRendered.text.trimEnd().length <= maxChars) {
-            return sendOrEditStreamMessage(trimmed);
-          }
+      }
+      resetStreamToNewMessage();
+      lastDeliveredText = "";
+      params.log?.(
+        `telegram stream preview overflow (${renderedText.length} > ${maxChars}); chaining to new message (offset=${textBaseOffset})`,
+      );
+      const overflowSlice = trimmed.slice(textBaseOffset).trimStart();
+      if (overflowSlice) {
+        const overflowRendered = params.renderText?.(overflowSlice) ?? { text: overflowSlice };
+        if (overflowRendered.text.trimEnd().length <= maxChars) {
+          return sendOrEditStreamMessage(trimmed);
         }
       }
-      streamState.stopped = true;
-      params.warn?.(
-        `telegram stream preview stopped (text length ${renderedText.length} > ${maxChars})`,
-      );
-      return false;
+      return true;
     }
     if (renderedText === lastSentText && renderedParseMode === lastSentParseMode) {
       return true;
@@ -388,6 +573,19 @@ export function createTelegramDraftStream(params: {
       }
       return sent;
     } catch (err) {
+      if (is429Error(err)) {
+        const retryMatch = String(err).match(/retry after (\d+)/i);
+        const retryAfterSec = retryMatch ? parseInt(retryMatch[1], 10) : 5;
+        const backoffMs = retryAfterSec * 1000 + 500;
+        rateLimitedUntilMs = Date.now() + backoffMs;
+        lastSentText = "";
+        lastSentParseMode = undefined;
+        onTelegramRateLimit(retryAfterSec);
+        params.warn?.(
+          `telegram stream preview rate limited; backing off ${retryAfterSec}s (until ${new Date(rateLimitedUntilMs).toISOString()})`,
+        );
+        return false;
+      }
       streamState.stopped = true;
       params.warn?.(`telegram stream preview failed: ${formatErrorMessage(err)}`);
       return false;
@@ -425,17 +623,15 @@ export function createTelegramDraftStream(params: {
   };
 
   const forceNewMessage = () => {
-    streamState.final = false;
-    generation += 1;
-    messageSendAttempted = false;
-    streamMessageId = undefined;
-    if (previewTransport === "draft") {
-      streamDraftId = allocateTelegramDraftId();
+    if (rateLimitedUntilMs > 0 && Date.now() < rateLimitedUntilMs) {
+      params.warn?.(
+        "telegram stream preview: forceNewMessage suppressed during 429 backoff; lane rotation deferred",
+      );
+      pendingForceNewMessage = true;
+      return;
     }
-    lastSentText = "";
-    lastSentParseMode = undefined;
-    loop.resetPending();
-    loop.resetThrottleWindow();
+    textBaseOffset = 0;
+    resetStreamToNewMessage();
   };
 
   const materialize = async (): Promise<number | undefined> => {
