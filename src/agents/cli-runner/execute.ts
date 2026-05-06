@@ -394,11 +394,11 @@ export async function executePreparedCliRun(
                   },
                 });
               },
-              onToolUseStart: ({ name }) => {
+              onThinkingDelta: ({ text, delta }) => {
                 emitAgentEvent({
                   runId: params.runId,
-                  stream: "tool",
-                  data: { phase: "start", name },
+                  stream: "thinking",
+                  data: { text, delta },
                 });
               },
             })

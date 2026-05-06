@@ -336,16 +336,45 @@ function parseClaudeCliStreamingDelta(params: {
   };
 }
 
+function describeToolInput(
+  name: string | undefined,
+  partialJson: string,
+): string | undefined {
+  if (!name || !partialJson) return undefined;
+  try {
+    const closing = partialJson.endsWith("}") ? partialJson : partialJson + '"}';
+    const obj = JSON.parse(closing) as Record<string, unknown>;
+    if (name === "Read" && typeof obj.file_path === "string") return obj.file_path;
+    if (name === "Write" && typeof obj.file_path === "string") return obj.file_path;
+    if (name === "Edit" && typeof obj.file_path === "string") return obj.file_path;
+    if (name === "Bash" && typeof obj.command === "string")
+      return obj.command.length > 120 ? obj.command.slice(0, 120) + "…" : obj.command;
+    if (name === "Bash" && typeof obj.description === "string") return obj.description;
+    if (name === "Grep" && typeof obj.pattern === "string")
+      return "/" + obj.pattern + "/" + (typeof obj.path === "string" ? " in " + obj.path : "");
+    if (name === "Glob" && typeof obj.pattern === "string")
+      return obj.pattern + (typeof obj.path === "string" ? " in " + obj.path : "");
+    if (name === "Agent" && typeof obj.description === "string") return obj.description;
+    if (name === "WebSearch" && typeof obj.query === "string") return obj.query;
+    if (name === "WebFetch" && typeof obj.url === "string") return obj.url;
+  } catch {
+    // partial JSON not yet parseable
+  }
+  return undefined;
+}
+
 export function createCliJsonlStreamingParser(params: {
   backend: CliBackendConfig;
   providerId: string;
   onAssistantDelta: (delta: CliStreamingDelta) => void;
-  onToolUseStart?: (payload: { name?: string }) => void;
+  onThinkingDelta?: (delta: CliStreamingDelta) => void;
 }) {
   let lineBuffer = "";
   let assistantText = "";
+  let thinkingText = "";
   let sessionId: string | undefined;
   let usage: CliUsage | undefined;
+  let activeToolBlock: { name?: string; inputJson: string; detailEmitted: boolean } | undefined;
 
   const handleParsedRecord = (parsed: Record<string, unknown>) => {
     sessionId = pickCliSessionId(parsed, params.backend) ?? sessionId;
@@ -356,16 +385,68 @@ export function createCliJsonlStreamingParser(params: {
       usage = toCliUsage(parsed.usage) ?? usage;
     }
 
-    if (
-      parsed.type === "stream_event" &&
-      isRecord(parsed.event) &&
-      (parsed.event as Record<string, unknown>).type === "content_block_start" &&
-      isRecord((parsed.event as Record<string, unknown>).content_block) &&
-      ((parsed.event as Record<string, unknown>).content_block as Record<string, unknown>).type === "tool_use"
-    ) {
-      const block = (parsed.event as Record<string, unknown>).content_block as Record<string, unknown>;
-      const name = typeof block.name === "string" ? block.name : undefined;
-      params.onToolUseStart?.({ name });
+    if (parsed.type === "stream_event" && isRecord(parsed.event)) {
+      const ev = parsed.event as Record<string, unknown>;
+      if (
+        ev.type === "content_block_start" &&
+        isRecord(ev.content_block) &&
+        (ev.content_block as Record<string, unknown>).type === "tool_use"
+      ) {
+        const block = ev.content_block as Record<string, unknown>;
+        const toolName = typeof block.name === "string" ? block.name : undefined;
+        const ts = new Date().toLocaleTimeString("en-GB", {
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+        });
+        activeToolBlock = { name: toolName, inputJson: "", detailEmitted: false };
+        const toolLine = "\n[" + ts + "] 🔧 " + (toolName || "tool");
+        thinkingText += toolLine;
+        params.onThinkingDelta?.({ text: thinkingText, delta: toolLine, sessionId, usage });
+      }
+      if (
+        ev.type === "content_block_delta" &&
+        isRecord(ev.delta) &&
+        (ev.delta as Record<string, unknown>).type === "input_json_delta" &&
+        activeToolBlock
+      ) {
+        const chunk =
+          typeof (ev.delta as Record<string, unknown>).partial_json === "string"
+            ? ((ev.delta as Record<string, unknown>).partial_json as string)
+            : "";
+        activeToolBlock.inputJson += chunk;
+        if (!activeToolBlock.detailEmitted && activeToolBlock.inputJson.length <= 500) {
+          const desc = describeToolInput(activeToolBlock.name, activeToolBlock.inputJson);
+          if (desc) {
+            activeToolBlock.detailEmitted = true;
+            const suffix = " — " + desc;
+            thinkingText += suffix;
+            params.onThinkingDelta?.({ text: thinkingText, delta: suffix, sessionId, usage });
+          }
+        }
+      }
+      if (ev.type === "content_block_stop" && activeToolBlock) {
+        activeToolBlock = undefined;
+      }
+      if (
+        ev.type === "content_block_delta" &&
+        isRecord(ev.delta) &&
+        (ev.delta as Record<string, unknown>).type === "thinking_delta"
+      ) {
+        const thinkChunk =
+          typeof (ev.delta as Record<string, unknown>).thinking === "string"
+            ? ((ev.delta as Record<string, unknown>).thinking as string)
+            : "";
+        if (thinkChunk) {
+          thinkingText += thinkChunk;
+          params.onThinkingDelta?.({
+            text: thinkingText,
+            delta: thinkChunk,
+            sessionId,
+            usage,
+          });
+        }
+      }
     }
 
     const delta = parseClaudeCliStreamingDelta({
