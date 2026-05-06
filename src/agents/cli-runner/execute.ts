@@ -394,6 +394,13 @@ export async function executePreparedCliRun(
                   },
                 });
               },
+              onToolUseStart: ({ name }) => {
+                emitAgentEvent({
+                  runId: params.runId,
+                  stream: "tool",
+                  data: { phase: "start", name },
+                });
+              },
             })
           : null;
         const supervisor = executeDeps.getProcessSupervisor();

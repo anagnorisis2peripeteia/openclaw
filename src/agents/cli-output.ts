@@ -340,6 +340,7 @@ export function createCliJsonlStreamingParser(params: {
   backend: CliBackendConfig;
   providerId: string;
   onAssistantDelta: (delta: CliStreamingDelta) => void;
+  onToolUseStart?: (payload: { name?: string }) => void;
 }) {
   let lineBuffer = "";
   let assistantText = "";
@@ -353,6 +354,18 @@ export function createCliJsonlStreamingParser(params: {
     }
     if (isRecord(parsed.usage)) {
       usage = toCliUsage(parsed.usage) ?? usage;
+    }
+
+    if (
+      parsed.type === "stream_event" &&
+      isRecord(parsed.event) &&
+      (parsed.event as Record<string, unknown>).type === "content_block_start" &&
+      isRecord((parsed.event as Record<string, unknown>).content_block) &&
+      ((parsed.event as Record<string, unknown>).content_block as Record<string, unknown>).type === "tool_use"
+    ) {
+      const block = (parsed.event as Record<string, unknown>).content_block as Record<string, unknown>;
+      const name = typeof block.name === "string" ? block.name : undefined;
+      params.onToolUseStart?.({ name });
     }
 
     const delta = parseClaudeCliStreamingDelta({

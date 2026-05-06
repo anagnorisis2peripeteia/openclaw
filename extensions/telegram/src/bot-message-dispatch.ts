@@ -1008,6 +1008,13 @@ export const dispatchTelegramMessage = async ({
             if (statusReactionController && toolName) {
               await statusReactionController.setTool(toolName);
             }
+            if (reasoningLane.stream && toolName) {
+              await enqueueDraftLaneEvent(async () => {
+                const toolLine = `\n🔧 \`${toolName}\``;
+                const updated = (reasoningLane.lastPartialText || "") + toolLine;
+                updateDraftFromPartial(reasoningLane, updated);
+              });
+            }
           },
           onCompactionStart:
             statusReactionController || answerLane.stream
