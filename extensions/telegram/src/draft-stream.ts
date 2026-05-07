@@ -5,7 +5,11 @@ import {
 } from "openclaw/plugin-sdk/channel-lifecycle";
 import { formatErrorMessage } from "openclaw/plugin-sdk/error-runtime";
 import { buildTelegramThreadParams, type TelegramThreadSpec } from "./bot/helpers.js";
-import { isSafeToRetrySendError, isTelegramClientRejection } from "./network-errors.js";
+import {
+  isRecoverableTelegramNetworkError,
+  isSafeToRetrySendError,
+  isTelegramClientRejection,
+} from "./network-errors.js";
 import { normalizeTelegramReplyToMessageId } from "./outbound-params.js";
 
 const TELEGRAM_STREAM_MAX_CHARS = 4096;
@@ -583,6 +587,18 @@ export function createTelegramDraftStream(params: {
         onTelegramRateLimit(retryAfterSec);
         params.warn?.(
           `telegram stream preview rate limited; backing off ${retryAfterSec}s (until ${new Date(rateLimitedUntilMs).toISOString()})`,
+        );
+        return false;
+      }
+      if (isRecoverableTelegramNetworkError(err, { allowMessageMatch: true })) {
+        lastSentText = "";
+        lastSentParseMode = undefined;
+        if (typeof streamMessageId !== "number") {
+          messageSendAttempted = false;
+          resetStreamToNewMessage();
+        }
+        params.warn?.(
+          `telegram stream preview transient network error (will retry${typeof streamMessageId === "number" ? " edit" : " send"}): ${formatErrorMessage(err)}`,
         );
         return false;
       }
