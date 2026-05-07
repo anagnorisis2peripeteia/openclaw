@@ -2838,6 +2838,85 @@ describe("dispatchTelegramMessage draft streaming", () => {
     );
   });
 
+  it("doubles draft throttle when both answer and reasoning lanes are streaming", async () => {
+    loadSessionStore.mockReturnValue({
+      s1: { reasoningLevel: "stream" },
+    });
+    const { answerDraftStream, reasoningDraftStream } = setupDraftStreams();
+    dispatchReplyWithBufferedBlockDispatcher.mockResolvedValue({ queuedFinal: true });
+
+    await dispatchWithContext({
+      context: createContext({
+        ctxPayload: { SessionKey: "s1" } as unknown as TelegramMessageContext["ctxPayload"],
+      }),
+    });
+
+    expect(createTelegramDraftStream).toHaveBeenCalledTimes(2);
+    const [answerCallArgs, reasoningCallArgs] = createTelegramDraftStream.mock.calls as [
+      [{ throttleMs?: number }],
+      [{ throttleMs?: number }],
+    ];
+    expect(answerCallArgs[0].throttleMs).toBe(2000);
+    expect(reasoningCallArgs[0].throttleMs).toBe(2000);
+    expect(answerDraftStream).toBeDefined();
+    expect(reasoningDraftStream).toBeDefined();
+  });
+
+  it("uses base draft throttle when only the answer lane is streaming", async () => {
+    const draftStream = createDraftStream();
+    createTelegramDraftStream.mockReturnValue(draftStream);
+    dispatchReplyWithBufferedBlockDispatcher.mockResolvedValue({ queuedFinal: true });
+
+    await dispatchWithContext({ context: createContext() });
+
+    expect(createTelegramDraftStream).toHaveBeenCalledTimes(1);
+    expect(createTelegramDraftStream).toHaveBeenCalledWith(
+      expect.objectContaining({ throttleMs: 1000 }),
+    );
+  });
+
+  it("does not expose reasoning preview callbacks unless session reasoning is stream", async () => {
+    let seenReasoningCallback: unknown;
+    const answerDraftStream = createDraftStream(999);
+    createTelegramDraftStream.mockImplementationOnce(() => answerDraftStream);
+    dispatchReplyWithBufferedBlockDispatcher.mockImplementation(async ({ replyOptions }) => {
+      seenReasoningCallback = replyOptions?.onReasoningStream;
+      await replyOptions?.onPartialReply?.({
+        text: "<think>internal chain of thought</think>Visible answer",
+      });
+      return { queuedFinal: false };
+    });
+
+    await dispatchWithContext({ context: createContext(), streamMode: "partial" });
+
+    expect(seenReasoningCallback).toBeUndefined();
+    expect(createTelegramDraftStream).toHaveBeenCalledTimes(1);
+    expect(answerDraftStream.update).toHaveBeenCalledWith("Visible answer");
+  });
+
+  it("falls back to normal send for media and clears the pending stream", async () => {
+    const { answerDraftStream } = setupDraftStreams({ answerMessageId: 2001 });
+    dispatchReplyWithBufferedBlockDispatcher.mockImplementation(async ({ dispatcherOptions }) => {
+      await dispatcherOptions.deliver(
+        { text: "Photo", mediaUrl: "https://example.com/a.png" },
+        { kind: "final" },
+      );
+      return { queuedFinal: true };
+    });
+
+    await dispatchWithContext({ context: createContext() });
+
+    expect(answerDraftStream.clear).toHaveBeenCalled();
+    expect(answerDraftStream.update).not.toHaveBeenCalledWith("Photo");
+    expect(deliverReplies).toHaveBeenCalledWith(
+      expect.objectContaining({
+        replies: [
+          expect.objectContaining({ text: "Photo", mediaUrl: "https://example.com/a.png" }),
+        ],
+      }),
+    );
+  });
+
   it("keeps reasoning and answer streaming in separate preview lanes", async () => {
     const { answerDraftStream, reasoningDraftStream } = setupDraftStreams({
       answerMessageId: 999,
