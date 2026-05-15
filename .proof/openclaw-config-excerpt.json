@@ -1,0 +1,41 @@
+{
+  "agents": {
+    "defaults": {
+      "model": {
+        "primary": "claude-cli-interactive/claude-opus-4-6"
+      },
+      "models": {
+        "claude-cli-interactive/claude-opus-4-7": {
+          "agentRuntime": {
+            "id": "claude-cli-interactive"
+          }
+        },
+        "claude-cli-interactive/claude-opus-4-6": {
+          "agentRuntime": {
+            "id": "claude-cli-interactive"
+          }
+        },
+        "claude-cli-interactive/claude-opus-4-5": {
+          "agentRuntime": {
+            "id": "claude-cli-interactive"
+          }
+        },
+        "claude-cli-interactive/claude-sonnet-4-6": {
+          "agentRuntime": {
+            "id": "claude-cli-interactive"
+          }
+        },
+        "claude-cli-interactive/claude-sonnet-4-5": {
+          "agentRuntime": {
+            "id": "claude-cli-interactive"
+          }
+        },
+        "claude-cli-interactive/claude-haiku-4-5": {
+          "agentRuntime": {
+            "id": "claude-cli-interactive"
+          }
+        }
+      }
+    }
+  }
+}

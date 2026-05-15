@@ -1,0 +1,26 @@
+=== ~/.openclaw/proxy-certs/ ===
+total 106
+drwxr-xr-x 1 <USER> <GID>    0 May 15 20:33 .
+drwxr-xr-x 1 <USER> <GID>    0 May 15 17:43 ..
+-rw-r--r-- 1 <USER> <GID> 1154 May 14 23:30 ca.crt
+-rw-r--r-- 1 <USER> <GID> 1732 May 14 23:30 ca.key
+-rw-r--r-- 1 <USER> <GID>   42 May 14 23:30 ca.srl
+-rw-r--r-- 1 <USER> <GID> 1270 May 14 23:30 leaf.crt
+-rw-r--r-- 1 <USER> <GID>  918 May 14 23:30 leaf.csr
+-rw-r--r-- 1 <USER> <GID>  222 May 14 23:30 leaf.ext
+-rw-r--r-- 1 <USER> <GID> 1732 May 14 23:30 leaf.key
+
+=== openssl x509 -in ca.crt ===
+subject=CN=OpenClaw Proxy CA
+issuer=CN=OpenClaw Proxy CA
+notBefore=May 14 22:30:14 2026 GMT
+notAfter=May 14 22:30:14 2027 GMT
+SHA1 Fingerprint=63:69:13:08:D9:AE:CC:CC:85:D3:A7:B2:AB:E0:A6:06:E3:88:97:2E
+
+=== openssl x509 -in leaf.crt ===
+subject=CN=api.anthropic.com
+issuer=CN=OpenClaw Proxy CA
+notBefore=May 14 22:30:15 2026 GMT
+notAfter=May 14 22:30:15 2027 GMT
+X509v3 Subject Alternative Name: 
+    DNS:api.anthropic.com, DNS:statsig.anthropic.com, DNS:console.anthropic.com

@@ -1,0 +1,30 @@
+2026-05-15T17:07:14.006+01:00 [agent/cli-backend] cli exec: provider=claude-cli-interactive model=opus promptChars=N trigger=user useResume=true session=present resumeSession=<SESSION> reuse=reusable historyPrompt=present
+2026-05-15T17:07:14.010+01:00 [agent/cli-backend] cli argv: bun <NPM>\node_modules\openclaw\dist\extensions\anthropic\interactive-proxy\wrapper.ts --effort max --verbose --setting-sources user --permission-mode bypassPermissions --resume <SESSION> --fork-session --strict-mcp-config --mcp-config <TMP>\openclaw-cli-mcp-<TMP>\mcp.json --model opus
+2026-05-15T19:03:23.722+01:00 [agent/cli-backend] cli exec: provider=claude-cli-interactive model=opus promptChars=N trigger=heartbeat useResume=true session=present resumeSession=<SESSION> reuse=reusable historyPrompt=none
+2026-05-15T19:03:23.727+01:00 [agent/cli-backend] cli argv: bun <NPM>\node_modules\openclaw\dist\extensions\anthropic\interactive-proxy\wrapper.ts --effort max --verbose --setting-sources user --permission-mode bypassPermissions --resume <SESSION> --allowedTools mcp__openclaw__* --strict-mcp-config --mcp-config <TMP>\openclaw-cli-mcp-<TMP>\mcp.json --model opus <prompt:N chars>
+[openclaw-proxy] starting, claude args count: 17 last arg length: N
+[openclaw-proxy] starting, claude args: [0]:--effort [1]:max [2]:--verbose [3]:--setting-sources [4]:user [5]:--permission-mode [6]:bypassPermissions [7]:--resume [8]:<SESSION> [9]:--allowedTools [10]:mcp__openclaw__* [11]:--strict-mcp-config [12]:--mcp-config [13]:<TMP>\openclaw-cli-mcp-<TMP>\mcp.json [14]:--model [15]:opus [16]:<PROMPT>
+[openclaw-proxy] certs ready: <HOME>\.openclaw\proxy-certs\ca.crt
+[openclaw-proxy] MITM proxy active on 127.0.0.1:17081 -- Anthropic API traffic intercepted locally to capture thinking_delta events
+[openclaw-proxy] spawning claude binary: <NPM>\node_modules\@anthropic-ai\claude-code\bin\claude.exe
+[openclaw-proxy] emitting result, text len: N
+[openclaw-proxy] result flushed, waiting for session write before kill, path: <HOME>\.claude\projects\<WORKSPACE>\<SESSION>.jsonl
+[openclaw-proxy] session file updated, killing claude
+[openclaw-proxy] killing claude
+[openclaw-proxy] claude exited, code:  signal: SIGTERM intentional: true
+[openclaw-proxy] killing claude
+2026-05-15T19:22:05.530+01:00 [agent/cli-backend] cli exec: provider=claude-cli-interactive model=opus promptChars=N trigger=user useResume=true session=present resumeSession=<SESSION> reuse=reusable historyPrompt=present
+2026-05-15T19:22:05.535+01:00 [agent/cli-backend] cli argv: bun <NPM>\node_modules\openclaw\dist\extensions\anthropic\interactive-proxy\wrapper.ts --effort max --verbose --setting-sources user --permission-mode bypassPermissions --resume <SESSION> --allowedTools mcp__openclaw__* --strict-mcp-config --mcp-config <TMP>\openclaw-cli-mcp-<TMP>\mcp.json --model opus <prompt:N chars>
+[openclaw-proxy] starting, claude args count: 17 last arg length: N
+[openclaw-proxy] starting, claude args: [0]:--effort [1]:max [2]:--verbose [3]:--setting-sources [4]:user [5]:--permission-mode [6]:bypassPermissions [7]:--resume [8]:<SESSION> [9]:--allowedTools [10]:mcp__openclaw__* [11]:--strict-mcp-config [12]:--mcp-config [13]:<TMP>\openclaw-cli-mcp-<TMP>\mcp.json [14]:--model [15]:opus [16]:<PROMPT>
+[openclaw-proxy] certs ready: <HOME>\.openclaw\proxy-certs\ca.crt
+[openclaw-proxy] MITM proxy active on 127.0.0.1:17081 -- Anthropic API traffic intercepted locally to capture thinking_delta events
+[openclaw-proxy] spawning claude binary: <NPM>\node_modules\@anthropic-ai\claude-code\bin\claude.exe
+[openclaw-proxy] emitting result, text len: N
+[openclaw-proxy] result flushed, waiting for session write before kill, path: <HOME>\.claude\projects\<WORKSPACE>\<SESSION>.jsonl
+[openclaw-proxy] session file updated, killing claude
+[openclaw-proxy] killing claude
+[openclaw-proxy] claude exited, code:  signal: SIGTERM intentional: true
+[openclaw-proxy] killing claude
+2026-05-15T19:25:36.934+01:00 [agent/cli-backend] cli exec: provider=claude-cli-interactive model=opus promptChars=N trigger=user useResume=false session=none resumeSession=none reuse=none historyPrompt=none
+2026-05-15T19:25:36.938+01:00 [agent/cli-backend] cli argv: bun <NPM>\node_modules\openclaw\dist\extensions\anthropic\interactive-proxy\wrapper.ts --effort max --verbose --setting-sources user --permission-mode bypassPermissions --allowedTools mcp__openclaw__* --strict-mcp-config --mcp-config <TMP>\openclaw-cli-mcp-<TMP>\mcp.json --model opus --append-system-prompt-file <TMP>\openclaw\openclaw-cli-system-prompt-<TMP>\system-prompt.md --session-id <SESSION> <prompt:N chars>
