@@ -3,6 +3,7 @@
 import { execFile } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { promisify } from "node:util";
+import { isClaudeCliCompatibleBackend } from "@openclaw/model-catalog-core/provider-id";
 import {
   resolveExpiresAtMsFromDurationSeconds,
   resolveTimestampMsToIsoString,
@@ -38,7 +39,10 @@ type LiveCronProbeSpec = {
 /** Return true for live agents that expose Claude-style MCP tool names. */
 export function isClaudeLikeLiveAgent(raw: string): boolean {
   const normalized = normalizeOptionalLowercaseString(raw);
-  return normalized === "claude" || normalized === "claude-cli";
+  if (normalized === "claude") {
+    return true;
+  }
+  return isClaudeCliCompatibleBackend(normalized);
 }
 
 /** Assert the live image probe answered with the expected cat description. */

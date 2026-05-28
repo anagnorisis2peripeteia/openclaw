@@ -1,5 +1,8 @@
 // Provides canonical default config values and model/provider defaults.
-import { normalizeProviderId } from "@openclaw/model-catalog-core/provider-id";
+import {
+  isClaudeCliCompatibleBackend,
+  normalizeProviderId,
+} from "@openclaw/model-catalog-core/provider-id";
 import {
   collectManifestModelIdNormalizationPolicies,
   normalizeConfiguredProviderCatalogModelId,
@@ -488,7 +491,7 @@ function hasAnthropicDefaultSignal(cfg: OpenClawConfig, env: NodeJS.ProcessEnv):
   if (profiles) {
     for (const profile of Object.values(profiles)) {
       const provider = normalizeProviderId(profile?.provider);
-      if (provider === "anthropic" || provider === "claude-cli") {
+      if (provider === "anthropic" || isClaudeCliCompatibleBackend(provider)) {
         return true;
       }
     }
@@ -499,7 +502,7 @@ function hasAnthropicDefaultSignal(cfg: OpenClawConfig, env: NodeJS.ProcessEnv):
   }
   return Object.keys(order).some((provider) => {
     const normalizedProvider = normalizeProviderId(provider);
-    if (normalizedProvider !== "anthropic" && normalizedProvider !== "claude-cli") {
+    if (normalizedProvider !== "anthropic" && !isClaudeCliCompatibleBackend(normalizedProvider)) {
       return false;
     }
     return (order as Record<string, unknown>)[provider] !== undefined;

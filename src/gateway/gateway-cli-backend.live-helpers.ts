@@ -3,6 +3,7 @@
 import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { isClaudeCliCompatibleBackend } from "@openclaw/model-catalog-core/provider-id";
 import { normalizeLowercaseStringOrEmpty } from "@openclaw/normalization-core/string-coerce";
 import type { EventFrame } from "../../packages/gateway-protocol/src/index.js";
 import {
@@ -194,13 +195,13 @@ export function resolveCliModelSwitchProbeTarget(
 ): string | undefined {
   const normalizedProvider = normalizeLowercaseStringOrEmpty(providerId);
   const normalizedModelRef = normalizeLowercaseStringOrEmpty(modelRef);
-  if (normalizedProvider !== "claude-cli") {
+  if (!isClaudeCliCompatibleBackend(normalizedProvider)) {
     return undefined;
   }
-  if (normalizedModelRef !== "claude-cli/claude-sonnet-4-6") {
+  if (normalizedModelRef !== `${normalizedProvider}/claude-sonnet-4-6`) {
     return undefined;
   }
-  return "claude-cli/claude-opus-4-6";
+  return `${normalizedProvider}/claude-opus-4-6`;
 }
 
 export function shouldRunCliModelSwitchProbe(providerId: string, modelRef: string): boolean {

@@ -1,6 +1,7 @@
 /**
  * Formats user-facing auth labels for resolved provider/model credentials.
  */
+import { isClaudeCliCompatibleBackend } from "@openclaw/model-catalog-core/provider-id";
 import { uniqueStrings } from "@openclaw/normalization-core/string-normalization";
 import type { SessionEntry } from "../config/sessions.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
@@ -136,10 +137,10 @@ export function resolveModelAuthLabel(params: {
     return "oauth (codex-cli)";
   }
   if (
-    providerKey === "claude-cli" &&
+    isClaudeCliCompatibleBackend(providerKey) &&
     readClaudeCliCredentialsCached({ ttlMs: 5_000, allowKeychainPrompt: false })
   ) {
-    return "oauth (claude-cli)";
+    return `oauth (${providerKey})`;
   }
 
   const customKey = resolveUsableCustomProviderApiKey({

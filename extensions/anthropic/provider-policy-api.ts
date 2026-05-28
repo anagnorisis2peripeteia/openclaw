@@ -39,6 +39,7 @@ export function resolveThinkingProfile(params: {
         includeNativeMax: true,
       });
     case "claude-cli":
+    case "claude-cli-interactive":
       if (contractModelId.startsWith("claude-fable-5")) {
         return CLAUDE_CLI_OFF_THINKING_PROFILE;
       }

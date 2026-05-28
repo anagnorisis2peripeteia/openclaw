@@ -45,7 +45,8 @@ export {
 const CLI_RUN_QUEUE = new KeyedAsyncQueue();
 
 function isClaudeCliProvider(providerId: string): boolean {
-  return normalizeOptionalLowercaseString(providerId) === "claude-cli";
+  const p = normalizeOptionalLowercaseString(providerId);
+  return p === "claude-cli" || p === "claude-cli-interactive";
 }
 
 /** Enqueues a CLI run under a backend/session key to prevent unsafe overlap. */
@@ -435,14 +436,14 @@ export function buildCliArgs(params: {
     args.push(params.backend.modelArg, params.modelId);
   }
   if (
-    (!params.useResume || params.backend.systemPromptWhen === "always") &&
+    !params.useResume &&
     params.systemPrompt &&
     params.systemPromptFilePath &&
     params.backend.systemPromptFileArg
   ) {
     args.push(params.backend.systemPromptFileArg, params.systemPromptFilePath);
   } else if (
-    (!params.useResume || params.backend.systemPromptWhen === "always") &&
+    !params.useResume &&
     params.systemPrompt &&
     params.systemPromptFilePath &&
     params.backend.systemPromptFileConfigKey

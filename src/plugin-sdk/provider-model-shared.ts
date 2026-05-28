@@ -1,5 +1,12 @@
-// Provider model helpers normalize model catalog entries shared by provider plugins.
-import { normalizeProviderId as normalizeProviderIdCore } from "@openclaw/model-catalog-core/provider-id";
+// Shared model/catalog helpers for provider plugins.
+//
+// Keep provider-owned exports out of this subpath so plugin loaders can import it
+// without recursing through provider-specific facades.
+
+import {
+  normalizeLegacyCliBackendKey as normalizeLegacyCliBackendKeyCore,
+  normalizeProviderId as normalizeProviderIdCore,
+} from "@openclaw/model-catalog-core/provider-id";
 import {
   normalizeAntigravityPreviewModelId as normalizeAntigravityPreviewModelIdCore,
   normalizeGooglePreviewModelId as normalizeGooglePreviewModelIdCore,
@@ -96,6 +103,9 @@ export function normalizeProviderId(
   provider: string,
 ): string {
   return normalizeProviderIdCore(provider);
+}
+export function normalizeLegacyCliBackendKey(key: string): string {
+  return normalizeLegacyCliBackendKeyCore(key);
 }
 export {
   createMoonshotThinkingWrapper,
