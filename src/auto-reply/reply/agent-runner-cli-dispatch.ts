@@ -2,6 +2,7 @@ import { runCliAgent } from "../../agents/cli-runner.js";
 import type { RunCliAgentParams } from "../../agents/cli-runner/types.js";
 import type { EmbeddedAgentRunResult } from "../../agents/embedded-agent.js";
 import type { AgentEventPayload } from "../../infra/agent-events.js";
+import { isClaudeCliCompatibleBackend } from "../../agents/provider-id.js";
 import { emitAgentEvent, onAgentEvent } from "../../infra/agent-events.js";
 import { isRecord } from "../../shared/record-coerce.js";
 import {
@@ -9,8 +10,15 @@ import {
   normalizeOptionalString,
 } from "../../shared/string-coerce.js";
 
-function shouldBridgeCliAssistantTextToReasoning(provider: string): boolean {
-  return normalizeLowercaseStringOrEmpty(provider) === "claude-cli";
+// Bridge CLI assistant-text deliveries onto the reasoning channel for any
+// Claude CLI variant. With adaptive thinking (Opus 4.6+), the upstream API
+// returns redacted thinking blocks — signatures only, no thinking_delta
+// content — so the only user-visible reasoning we get is the assistant text
+// itself, which we re-deliver as reasoning. claude-cli-interactive (PR
+// #81851) hits the same API and needs the same treatment; without it
+// adaptive-thinking turns surface no reasoning content at all on Telegram.
+export function shouldBridgeCliAssistantTextToReasoning(provider: string): boolean {
+  return isClaudeCliCompatibleBackend(provider);
 }
 
 function createAgentEventBridge<T>(params: {

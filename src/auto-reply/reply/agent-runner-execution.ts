@@ -51,7 +51,7 @@ import {
 import { resolveSilentReplyPolicy } from "../../config/silent-reply.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { logVerbose } from "../../globals.js";
-import { emitAgentEvent, registerAgentRunContext } from "../../infra/agent-events.js";
+import { emitAgentEvent, onAgentEvent, registerAgentRunContext } from "../../infra/agent-events.js";
 import { isDiagnosticsEnabled } from "../../infra/diagnostic-events.js";
 import { formatErrorMessage } from "../../infra/errors.js";
 import { logSessionTurnCreated } from "../../logging/diagnostic.js";
@@ -86,7 +86,10 @@ import {
 } from "../tokens.js";
 import type { GetReplyOptions, ReplyPayload } from "../types.js";
 import { resolveRunAuthProfile } from "./agent-runner-auth-profile.js";
-import { runCliAgentWithLifecycle } from "./agent-runner-cli-dispatch.js";
+import {
+  runCliAgentWithLifecycle,
+  shouldBridgeCliAssistantTextToReasoning,
+} from "./agent-runner-cli-dispatch.js";
 import {
   GENERIC_EXTERNAL_RUN_FAILURE_TEXT,
   HEARTBEAT_EXTERNAL_RUN_FAILURE_TEXT,
@@ -2010,6 +2013,34 @@ export async function runAgentTurnWithFallback(params: {
                 originatingChannel: params.followupRun.originatingChannel,
                 provider: params.sessionCtx.Provider,
               });
+              // Bridge stream:"thinking" agent events (cli-interactive MITM proxy
+              // thinking_delta) into onReasoningStream. Plain claude-cli already
+              // routes its assistant text into the reasoning lane via
+              // runCliAgentWithLifecycle's reasoningBridge gate — that path
+              // remains unchanged. The cliThinkingArrived flag prevents the
+              // onReasoningText callback below from double-delivering when
+              // thinking arrives for cli-interactive.
+              let cliThinkingArrived = false;
+              const cliThinkingBridge = (() => {
+                let delivery = Promise.resolve<void>(undefined);
+                const rawUnsubscribe = onAgentEvent((evt) => {
+                  if (evt.runId !== runId || evt.stream !== "thinking") {return;}
+                  if (params.followupRun.run.silentExpected) {return;}
+                  const text = typeof evt.data?.text === "string" ? evt.data.text : undefined;
+                  if (!text) {return;}
+                  cliThinkingArrived = true;
+                  delivery = delivery
+                    .then(() => params.opts?.onReasoningStream?.({ text }) ?? Promise.resolve())
+                    .catch(() => undefined);
+                });
+                return {
+                  unsubscribe: rawUnsubscribe,
+                  async drain(): Promise<void> {
+                    await delivery;
+                  },
+                };
+              })();
+              try {
               const result = await agentTurnTiming.measure("cli_run", () =>
                 runCliAgentWithLifecycle({
                   runId,
@@ -2017,6 +2048,20 @@ export async function runAgentTurnWithFallback(params: {
                   onAgentRunStart: notifyAgentRunStart,
                   suppressAssistantBridge: params.followupRun.run.silentExpected,
                   onAssistantText: async (text) => {
+                    // Dedup: when the reasoning bridge gate routes this same
+                    // text into the reasoning lane (via assistant-text-as-reasoning
+                    // fallback in agent-runner-cli-dispatch.ts), suppress the
+                    // answer-lane delivery to avoid the user seeing duplicate
+                    // text. Only skip when thinking hasn't arrived yet — if
+                    // cliThinkingBridge above already started feeding the
+                    // reasoning lane via thinking_delta events, the answer-lane
+                    // delivery is still the only place this text lands.
+                    if (
+                      !cliThinkingArrived &&
+                      shouldBridgeCliAssistantTextToReasoning(cliExecutionProvider)
+                    ) {
+                      return;
+                    }
                     const textForTyping = await handlePartialForTyping({ text } as ReplyPayload);
                     if (textForTyping === undefined || !params.opts?.onPartialReply) {
                       return;
@@ -2024,6 +2069,10 @@ export async function runAgentTurnWithFallback(params: {
                     await params.opts.onPartialReply({ text: textForTyping });
                   },
                   onReasoningText: async (text) => {
+                    // Skip when the cli-interactive MITM proxy is already feeding
+                    // thinking_delta into the reasoning lane (cliThinkingBridge
+                    // above) — otherwise we'd double-deliver.
+                    if (cliThinkingArrived) {return;}
                     await params.opts?.onReasoningStream?.({ text });
                   },
                   onToolEvent: async ({ name, phase, args }) => {
@@ -2116,10 +2165,15 @@ export async function runAgentTurnWithFallback(params: {
                       : rawResult,
                 }),
               );
+              cliThinkingBridge.unsubscribe();
+              await cliThinkingBridge.drain();
               bootstrapPromptWarningSignaturesSeen = resolveBootstrapWarningSignaturesSeen(
                 result.meta?.systemPromptReport,
               );
               return result;
+              } finally {
+                cliThinkingBridge.unsubscribe();
+              }
             }
             const { embeddedContext, senderContext, runBaseParams } =
               buildEmbeddedRunExecutionParams({

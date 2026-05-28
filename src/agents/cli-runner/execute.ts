@@ -286,7 +286,7 @@ export async function executePreparedCliRun(
     systemPrompt: context.systemPrompt,
   });
   const systemPromptFile =
-    systemPromptArg && (!useResume || backend.systemPromptWhen === "always")
+    !useResume && systemPromptArg
       ? await writeCliSystemPromptFile({
           backend,
           systemPrompt: systemPromptArg,
@@ -323,18 +323,15 @@ export async function executePreparedCliRun(
   const resolvedArgs = useResume
     ? baseArgs.map((entry) => entry.replaceAll("{sessionId}", resolvedSessionId ?? ""))
     : baseArgs;
-  const fallbackClaudeSkillsPlugin =
-    context.claudeSkillsPluginArgs === undefined
-      ? await prepareClaudeCliSkillsPlugin({
-          backendId: context.backendResolved.id,
-          skillsSnapshot: params.skillsSnapshot,
-        })
-      : undefined;
-  let fallbackClaudeSkillsPluginCleanupOwned = false;
-  const claudeSkillsPluginArgs =
-    context.claudeSkillsPluginArgs ?? fallbackClaudeSkillsPlugin?.args ?? [];
+  const claudeSkillsPlugin = await prepareClaudeCliSkillsPlugin({
+    backendId: context.backendResolved.id,
+    skillsSnapshot: params.skillsSnapshot,
+  });
+  let claudeSkillsPluginCleanupOwned = false;
   const baseArgsWithSkills =
-    claudeSkillsPluginArgs.length > 0 ? [...resolvedArgs, ...claudeSkillsPluginArgs] : resolvedArgs;
+    claudeSkillsPlugin.args.length > 0
+      ? [...resolvedArgs, ...claudeSkillsPlugin.args]
+      : resolvedArgs;
   const executionBaseArgs =
     context.backendResolved.resolveExecutionArgs?.({
       config: params.config,
@@ -491,7 +488,7 @@ export async function executePreparedCliRun(
             model: context.modelId,
             backend: context.backendResolved.id,
           });
-          fallbackClaudeSkillsPluginCleanupOwned = true;
+          claudeSkillsPluginCleanupOwned = true;
           const ownedPreparedBackendCleanup = context.preparedBackend.cleanup;
           context.preparedBackend.cleanup = undefined;
           const liveResult = await runClaudeLiveSessionTurn({
@@ -502,7 +499,15 @@ export async function executePreparedCliRun(
             useResume,
             noOutputTimeoutMs,
             getProcessSupervisor: executeDeps.getProcessSupervisor,
-            onAssistantDelta: ({ text, delta }) => {
+            onAssistantDelta: ({ text, delta, thinkingDelta, thinkingText }) => {
+              if (thinkingDelta !== undefined && thinkingText !== undefined) {
+                emitAgentEvent({
+                  runId: params.runId,
+                  stream: "thinking",
+                  data: { text: thinkingText, delta: thinkingDelta },
+                });
+                return;
+              }
               emitAgentEvent({
                 runId: params.runId,
                 stream: "assistant",
@@ -522,7 +527,7 @@ export async function executePreparedCliRun(
             onToolResult: emitCliToolResult,
             cleanup: async () => {
               try {
-                await fallbackClaudeSkillsPlugin?.cleanup();
+                await claudeSkillsPlugin.cleanup();
               } finally {
                 await ownedPreparedBackendCleanup?.();
               }
@@ -543,7 +548,15 @@ export async function executePreparedCliRun(
           ? createCliJsonlStreamingParser({
               backend,
               providerId: context.backendResolved.id,
-              onAssistantDelta: ({ text, delta }) => {
+              onAssistantDelta: ({ text, delta, thinkingDelta, thinkingText }) => {
+                if (thinkingDelta !== undefined && thinkingText !== undefined) {
+                  emitAgentEvent({
+                    runId: params.runId,
+                    stream: "thinking",
+                    data: { text: thinkingText, delta: thinkingDelta },
+                  });
+                  return;
+                }
                 emitAgentEvent({
                   runId: params.runId,
                   stream: "assistant",
@@ -795,8 +808,8 @@ export async function executePreparedCliRun(
       }
     });
   } finally {
-    if (!fallbackClaudeSkillsPluginCleanupOwned) {
-      await fallbackClaudeSkillsPlugin?.cleanup();
+    if (!claudeSkillsPluginCleanupOwned) {
+      await claudeSkillsPlugin.cleanup();
     }
     if (systemPromptFile) {
       await systemPromptFile.cleanup();

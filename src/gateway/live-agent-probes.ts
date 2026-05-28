@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { promisify } from "node:util";
+import { isClaudeCliCompatibleBackend } from "../agents/provider-id.js";
 import { normalizeOptionalLowercaseString } from "../shared/string-coerce.js";
 
 const execFileAsync = promisify(execFile);
@@ -28,7 +29,8 @@ type LiveCronProbeSpec = {
 
 export function isClaudeLikeLiveAgent(raw: string): boolean {
   const normalized = normalizeOptionalLowercaseString(raw);
-  return normalized === "claude" || normalized === "claude-cli";
+  if (normalized === "claude") {return true;}
+  return isClaudeCliCompatibleBackend(normalized);
 }
 
 export function assertLiveImageProbeReply(text: string): void {
