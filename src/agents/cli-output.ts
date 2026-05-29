@@ -651,6 +651,7 @@ export function createCliJsonlStreamingParser(params: {
   let assistantText = "";
   let pendingClaudeText = "";
   let thinkingText = "";
+  let sawToolUseSinceLastText = false;
   let sessionId: string | undefined;
   let usage: CliUsage | undefined;
   let output: CliOutput | null = null;
@@ -727,16 +728,25 @@ export function createCliJsonlStreamingParser(params: {
       }
     }
 
-    if (classifyClaudeCommentary && parsed.type === "stream_event" && isRecord(parsed.event)) {
+    if (parsed.type === "stream_event" && isRecord(parsed.event)) {
       const evt = parsed.event;
-      if (
-        evt.type === "content_block_start" &&
-        isRecord(evt.content_block) &&
-        isClaudeToolUseBlockType(evt.content_block.type)
-      ) {
-        flushPendingClaudeCommentaryText();
-      } else if (evt.type === "content_block_start" || evt.type === "message_stop") {
-        flushPendingClaudeAssistantText();
+      if (classifyClaudeCommentary) {
+        if (
+          evt.type === "content_block_start" &&
+          isRecord(evt.content_block) &&
+          isClaudeToolUseBlockType(evt.content_block.type)
+        ) {
+          flushPendingClaudeCommentaryText();
+        } else if (evt.type === "content_block_start" || evt.type === "message_stop") {
+          flushPendingClaudeAssistantText();
+        }
+      } else if (evt.type === "content_block_start" && isRecord(evt.content_block)) {
+        if (isClaudeToolUseBlockType(evt.content_block.type)) {
+          sawToolUseSinceLastText = true;
+        } else if (evt.content_block.type === "text" && sawToolUseSinceLastText && assistantText) {
+          assistantText += "\n\n";
+          sawToolUseSinceLastText = false;
+        }
       }
     }
 
