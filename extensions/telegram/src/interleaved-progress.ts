@@ -158,21 +158,23 @@ export function appendInterleavedDelta(params: {
   };
 }
 
-// Minimum overlap length (chars) before cross-stream dedup folds. A real
-// duplicate shares a long run (a whole phrase); a short coincidental match at a
-// word boundary between two distinct streams must NOT be folded.
-const INTERLEAVED_MIN_TAIL_OVERLAP = 10;
+// Minimum overlap length (chars) before cross-stream dedup folds at a
+// non-boundary position. Full-increment overlaps (the ENTIRE increment already
+// sits at the body tail) are always folded regardless of length — that is the
+// canonical cross-stream duplicate case. Partial overlaps must reach this
+// threshold so ordinary streaming (whose increments are genuinely new short
+// tokens) is untouched.
+const INTERLEAVED_MIN_PARTIAL_OVERLAP = 10;
 
 /**
  * Return `increment` with any leading run that already appears at the tail of
  * `body`'s current prose block removed. The comparison never crosses a
  * synthesized tool/status line (`\n[HH:MM:SS] …`) — those are hard checkpoints
- * that prose overlap can't span. The fold cut must land on a word boundary so a
- * surviving word is never split, and must be at least INTERLEAVED_MIN_TAIL_OVERLAP
- * chars so ordinary streaming (whose increments are genuinely new) is untouched.
+ * that prose overlap can't span. Partial-overlap cuts must land on a word
+ * boundary so a surviving word is never split.
  */
 function dropBodyTailOverlap(body: string, increment: string): string {
-  if (increment.length < INTERLEAVED_MIN_TAIL_OVERLAP) {
+  if (!increment) {
     return increment;
   }
   // Prose tail = trailing body lines up to (not including) the last status line.
@@ -185,13 +187,36 @@ function dropBodyTailOverlap(body: string, increment: string): string {
     proseLines.unshift(lines[i] ?? "");
   }
   const tail = proseLines.join("\n");
+  if (!tail) {
+    return increment;
+  }
+  // Full-increment match: the entire increment is already at the body tail.
+  // Always fold — this is the canonical cross-stream duplicate (e.g. "There"
+  // already committed by stream A, now arriving again on stream B).
+  if (tail.endsWith(increment)) {
+    return "";
+  }
+  // Tail-as-prefix: the body tail ends with a prefix of the increment (e.g.
+  // body ends with "There", increment is "There it is."). Find the longest
+  // suffix of tail that matches a prefix of increment and strip it.
+  const scanLen = Math.min(tail.length, increment.length);
+  for (let k = scanLen; k >= 1; k -= 1) {
+    if (tail.endsWith(increment.slice(0, k))) {
+      return increment.slice(k);
+    }
+  }
+  // Partial overlap: only fold if above the minimum threshold and at a word
+  // boundary, to avoid folding genuinely-new short streaming tokens.
+  if (increment.length < INTERLEAVED_MIN_PARTIAL_OVERLAP) {
+    return increment;
+  }
   const maxK = Math.min(tail.length, increment.length);
-  for (let k = maxK; k >= INTERLEAVED_MIN_TAIL_OVERLAP; k -= 1) {
+  for (let k = maxK; k >= INTERLEAVED_MIN_PARTIAL_OVERLAP; k -= 1) {
     if (k < increment.length) {
       const before = increment[k - 1] ?? "";
       const after = increment[k] ?? "";
       if (/\w/u.test(before) && /\w/u.test(after)) {
-        continue; // cut would split a word in the surviving remainder
+        continue;
       }
     }
     if (tail.endsWith(increment.slice(0, k))) {

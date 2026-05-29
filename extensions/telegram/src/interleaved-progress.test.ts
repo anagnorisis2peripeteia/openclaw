@@ -301,6 +301,28 @@ describe("appendInterleavedDelta", () => {
     expect(body.match(/61f4536/gu)?.length).toBe(1);
   });
 
+  // Regression: short inter-tool preamble like "There" (5 chars) was not folded
+  // because the minimum overlap threshold was too high. Full-increment overlaps
+  // must always fold regardless of length.
+  it("folds a short full-increment duplicate from a second stream", () => {
+    let body = "";
+    const r = appendInterleavedDelta({
+      body,
+      state: emptyInterleavedStreamState(),
+      text: "There",
+    });
+    body = r.body;
+    expect(body).toBe("There");
+    const a = appendInterleavedDelta({
+      body,
+      state: emptyInterleavedStreamState(),
+      text: "There it is.",
+    });
+    body = a.body;
+    expect(body).toBe("There it is.");
+    expect(body.match(/There/gu)?.length).toBe(1);
+  });
+
   // Distinct content from two streams must NOT be folded — only true overlap is.
   it("keeps distinct content from two streams (no false dedup)", () => {
     let body = "";
