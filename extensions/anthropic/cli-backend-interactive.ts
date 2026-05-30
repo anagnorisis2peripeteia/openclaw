@@ -138,7 +138,7 @@ export function buildAnthropicInteractiveCliBackend(): CliBackendPlugin {
       sessionIdFields: [...CLAUDE_CLI_SESSION_ID_FIELDS],
       systemPromptFileArg: "--append-system-prompt-file",
       systemPromptMode: "append",
-      systemPromptWhen: "first",
+      systemPromptWhen: "always",
       clearEnv: [...CLAUDE_CLI_CLEAR_ENV],
       reliability: {
         watchdog: {
@@ -186,7 +186,10 @@ export function buildAnthropicInteractiveCliBackend(): CliBackendPlugin {
       const inheritedClaudeCliCommand = (() => {
         const backends = context?.config?.agents?.defaults?.cliBackends ?? {};
         for (const [key, entry] of Object.entries(backends)) {
-          if (normalizeProviderId(key) === CLAUDE_CLI_BACKEND_ID) {
+          // `normalizeProviderId` no longer folds the legacy `anthropic-cli` key
+          // into `claude-cli` (the platform alias was removed), so detect that
+          // legacy key explicitly to keep inherited-binary configs working.
+          if (normalizeProviderId(key) === CLAUDE_CLI_BACKEND_ID || key === "anthropic-cli") {
             return entry?.command;
           }
         }
@@ -233,7 +236,7 @@ export function buildAnthropicInteractiveCliBackend(): CliBackendPlugin {
         // failover-triggering error rather than hanging the turn.
         maxPromptArgChars: process.platform === "win32" ? 30000 : 200000,
         systemPromptMode: "append",
-        systemPromptWhen: "first",
+        systemPromptWhen: "always",
         args: ensureAllowedTools(normalized.args),
         resumeArgs: ensureAllowedTools(normalized.resumeArgs),
         env,

@@ -156,9 +156,9 @@ describe("buildAnthropicInteractiveCliBackend Claude history-import parity", () 
     expect(plain.output).toBe("jsonl");
   });
 
-  it("appends OpenClaw system prompts on first turn only (parity prevents double-injection on reseed)", () => {
+  it("appends OpenClaw system prompts on every turn (parity with claude-cli; issue #80374)", () => {
     expect(interactive.systemPromptMode).toBe("append");
-    expect(interactive.systemPromptWhen).toBe("first");
+    expect(interactive.systemPromptWhen).toBe("always");
     expect(interactive.systemPromptMode).toBe(plain.systemPromptMode);
     expect(interactive.systemPromptWhen).toBe(plain.systemPromptWhen);
   });
