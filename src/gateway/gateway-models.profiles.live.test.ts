@@ -746,18 +746,17 @@ describe("resolveGatewayLiveModelTimeoutMs", () => {
   it("defaults to the release live model budget", () => {
     expect(resolveGatewayLiveModelTimeoutMs("", undefined, 90_000)).toBe(300_000);
   });
-
-  it("never goes below the probe timeout", () => {
-    expect(resolveGatewayLiveModelTimeoutMs("45000", undefined, 90_000)).toBe(90_000);
-  });
 });
 
 describe("resolveGatewayLiveTranscriptTimeoutMs", () => {
   it("uses the model budget for transcript waits", () => {
     expect(resolveGatewayLiveTranscriptTimeoutMs(90_000, 180_000)).toBe(180_000);
   });
+});
 
+describe("gateway live timeout floors", () => {
   it("never goes below the probe timeout", () => {
+    expect(resolveGatewayLiveModelTimeoutMs("45000", undefined, 90_000)).toBe(90_000);
     expect(resolveGatewayLiveTranscriptTimeoutMs(240_000, 180_000)).toBe(240_000);
   });
 });
@@ -1272,6 +1271,17 @@ function isGoogleModelNotFoundText(text: string): boolean {
   return false;
 }
 
+function isAnthropicModelUnavailableDrift(raw: string): boolean {
+  const msg = raw.trim();
+  if (!msg) {
+    return false;
+  }
+  if (isModelNotFoundErrorMessage(msg)) {
+    return true;
+  }
+  return /\b404 status code\b/i.test(msg) && /\bno body\b/i.test(msg);
+}
+
 function isGoogleishProvider(provider: string): boolean {
   return provider === "google" || provider.startsWith("google-");
 }
@@ -1416,6 +1426,17 @@ describe("shouldSkipEmptyResponseForLiveModel", () => {
       expect(shouldSkipEmptyResponseForLiveModel({ provider, allowNotFoundSkip })).toBe(expected);
     },
   );
+});
+
+describe("isAnthropicModelUnavailableDrift", () => {
+  it("treats Anthropic bare 404 live probe failures as model drift", () => {
+    expect(
+      isAnthropicModelUnavailableDrift(
+        "agent.wait error for runId=run-1 (error=FailoverError: 404 status code (no body))",
+      ),
+    ).toBe(true);
+    expect(isAnthropicModelUnavailableDrift("Error: 503 status code (no body)")).toBe(false);
+  });
 });
 
 describe("isEmptyStreamText", () => {
@@ -3080,6 +3101,15 @@ async function runGatewayModelSuite(params: GatewayModelSuiteParams) {
           if (model.provider === "anthropic" && isEmptyStreamText(message)) {
             skippedCount += 1;
             logProgress(`${progressLabel}: skip (anthropic empty response)`);
+            break;
+          }
+          if (
+            model.provider === "anthropic" &&
+            params.allowNotFoundSkip &&
+            isAnthropicModelUnavailableDrift(message)
+          ) {
+            skippedCount += 1;
+            logProgress(`${progressLabel}: skip (anthropic model unavailable)`);
             break;
           }
           if (

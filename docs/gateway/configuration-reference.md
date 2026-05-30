@@ -214,7 +214,8 @@ See [MCP](/cli/mcp#openclaw-as-an-mcp-client-registry) and
 }
 ```
 
-- Loaded from `~/.openclaw/extensions`, `<workspace>/.openclaw/extensions`, plus `plugins.load.paths`.
+- Loaded from package or bundle directories under `~/.openclaw/extensions` and `<workspace>/.openclaw/extensions`, plus files or directories listed in `plugins.load.paths`.
+- Put standalone plugin files in `plugins.load.paths`; auto-discovered extension roots ignore top-level `.js`, `.mjs`, and `.ts` files so helper scripts in those roots do not block startup.
 - Discovery accepts native OpenClaw plugins plus compatible Codex bundles and Claude bundles, including manifestless Claude default-layout bundles.
 - **Config changes require a gateway restart.**
 - `allow`: optional allowlist (only listed plugins load). `deny` wins.
@@ -935,11 +936,11 @@ Notes:
     profiles: {
       "anthropic:default": { provider: "anthropic", mode: "api_key" },
       "anthropic:work": { provider: "anthropic", mode: "api_key" },
-      "openai-codex:personal": { provider: "openai-codex", mode: "oauth" },
+      "openai:personal": { provider: "openai", mode: "oauth" },
     },
     order: {
       anthropic: ["anthropic:default", "anthropic:work"],
-      "openai-codex": ["openai-codex:personal"],
+      openai: ["openai:personal"],
     },
   },
 }

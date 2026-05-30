@@ -2109,6 +2109,118 @@ describe("dispatchTelegramMessage draft streaming", () => {
     expect(deliverReplies).not.toHaveBeenCalled();
   });
 
+  it("hides Telegram commentary progress unless explicitly enabled", async () => {
+    const { answerDraftStream } = setupDraftStreams({ answerMessageId: 2001 });
+    dispatchReplyWithBufferedBlockDispatcher.mockImplementation(async ({ replyOptions }) => {
+      await replyOptions?.onItemEvent?.({
+        itemId: "preamble-1",
+        kind: "preamble",
+        progressText: "Checking private context before replying.",
+      });
+      return { queuedFinal: false };
+    });
+
+    await dispatchWithContext({
+      context: createContext(),
+      streamMode: "progress",
+      telegramCfg: { streaming: { mode: "progress", progress: { label: false } } },
+    });
+
+    expect(answerDraftStream.update).not.toHaveBeenCalled();
+  });
+
+  it("shows opt-in Telegram commentary progress through the shared progress draft", async () => {
+    const { answerDraftStream } = setupDraftStreams({ answerMessageId: 2001 });
+    dispatchReplyWithBufferedBlockDispatcher.mockImplementation(async ({ replyOptions }) => {
+      await replyOptions?.onItemEvent?.({
+        itemId: "preamble-1",
+        kind: "preamble",
+        progressText: "Checking the current weather source before summarizing.",
+      });
+      await replyOptions?.onItemEvent?.({
+        itemId: "preamble-1",
+        kind: "preamble",
+        progressText: "Checking the current weather source before summarizing clearly.",
+      });
+      await replyOptions?.onItemEvent?.({
+        itemId: "preamble-2",
+        kind: "preamble",
+        progressText: "[[reply_to_current]] Checking route impacts.",
+      });
+      await replyOptions?.onItemEvent?.({
+        itemId: "preamble-2",
+        kind: "preamble",
+        progressText: "NO_REPLY",
+      });
+      await replyOptions?.onToolStart?.({ name: "exec", phase: "start" });
+      return { queuedFinal: false };
+    });
+
+    await dispatchWithContext({
+      context: createContext(),
+      streamMode: "progress",
+      telegramCfg: {
+        streaming: {
+          mode: "progress",
+          progress: {
+            label: false,
+            toolProgress: false,
+            commentary: true,
+          },
+        },
+      },
+    });
+
+    expect(answerDraftStream.update).toHaveBeenLastCalledWith(
+      "_Checking the current weather source before summarizing clearly._",
+    );
+    const updates = answerDraftStream.update.mock.calls.map((call) => call[0]).join("\n");
+    expect(updates).not.toContain("Exec");
+    expect(updates).not.toContain("reply_to_current");
+    expect(updates).not.toContain("NO_REPLY");
+  });
+
+  it("keeps Telegram progress drafts usable after the last commentary line becomes silent", async () => {
+    const { answerDraftStream } = setupDraftStreams({ answerMessageId: 2001 });
+    dispatchReplyWithBufferedBlockDispatcher.mockImplementation(async ({ replyOptions }) => {
+      await replyOptions?.onItemEvent?.({
+        itemId: "preamble-1",
+        kind: "preamble",
+        progressText: "Temporary note.",
+      });
+      await replyOptions?.onItemEvent?.({
+        itemId: "preamble-1",
+        kind: "preamble",
+        progressText: "NO_REPLY",
+      });
+      await replyOptions?.onToolStart?.({ name: "exec", phase: "start" });
+      return { queuedFinal: false };
+    });
+
+    await dispatchWithContext({
+      context: createContext(),
+      streamMode: "progress",
+      telegramCfg: {
+        streaming: {
+          mode: "progress",
+          progress: {
+            label: false,
+            commentary: true,
+          },
+        },
+      },
+    });
+
+    expect(answerDraftStream.clear).toHaveBeenCalled();
+    expect(answerDraftStream.forceNewMessage).toHaveBeenCalled();
+    const clearOrder = answerDraftStream.clear.mock.invocationCallOrder[0];
+    const forceNewMessageOrder = answerDraftStream.forceNewMessage.mock.invocationCallOrder[0];
+    const lastUpdateOrder = answerDraftStream.update.mock.invocationCallOrder.at(-1)!;
+    expect(clearOrder).toBeLessThan(forceNewMessageOrder);
+    expect(forceNewMessageOrder).toBeLessThan(lastUpdateOrder);
+    expect(answerDraftStream.update).toHaveBeenLastCalledWith("`🛠️ Exec`");
+  });
+
   it("does not restart progress drafts after final answer delivery", async () => {
     const { answerDraftStream } = setupDraftStreams({ answerMessageId: 2001 });
     dispatchReplyWithBufferedBlockDispatcher.mockImplementation(
