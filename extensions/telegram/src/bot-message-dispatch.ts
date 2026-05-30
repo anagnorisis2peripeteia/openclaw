@@ -1376,8 +1376,14 @@ export const dispatchTelegramMessage = async ({
       ...(delta !== undefined ? { delta } : {}),
       ...(opts?.replace ? { replace: true } : {}),
     });
+    const reasoningAppended = result.body !== interleavedBody;
     interleavedBody = result.body;
     interleavedReasoningState = result.state;
+    if (reasoningAppended) {
+      // Intervening reasoning means a following same-name tool/status line is not a
+      // consecutive duplicate; clear the dedupe marker so the repeat still renders.
+      interleavedPrevStatusLine = undefined;
+    }
     return updateInterleavedLane();
   };
   const stripInterleavedFinalAnswer = (finalText: string): void => {
@@ -2234,10 +2240,16 @@ export const dispatchTelegramMessage = async ({
                   },
                   onItemEvent: async (payload) => {
                     if (payload.kind === "preamble") {
-                      await pushCommentaryProgress(payload.progressText, {
-                        itemId: payload.itemId,
-                      });
-                      return;
+                      const handledAsCommentary = await pushCommentaryProgress(
+                        payload.progressText,
+                        { itemId: payload.itemId },
+                      );
+                      if (handledAsCommentary) {
+                        return;
+                      }
+                      // Commentary draft is inactive (not progress mode / commentary
+                      // off): fall through so default preview users keep the released
+                      // preamble progress signal via the default/interleaved lane.
                     }
                     const itemLine = buildChannelProgressDraftLineForEntry(telegramCfg, {
                       event: "item",

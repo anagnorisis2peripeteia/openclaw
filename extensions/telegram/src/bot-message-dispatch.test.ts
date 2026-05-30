@@ -2741,6 +2741,37 @@ describe("dispatchTelegramMessage draft streaming", () => {
     );
   });
 
+  it("renders a repeated same-name tool line after intervening reasoning", async () => {
+    const { reasoningDraftStream } = setupDraftStreams({
+      answerMessageId: 2001,
+      reasoningMessageId: 3001,
+    });
+    dispatchReplyWithBufferedBlockDispatcher.mockImplementation(
+      async ({ dispatcherOptions, replyOptions }) => {
+        await replyOptions?.onToolStart?.({ name: "exec", phase: "start" });
+        await replyOptions?.onReasoningStream?.({ text: "<think>weighing options</think>" });
+        await replyOptions?.onToolStart?.({ name: "exec", phase: "start" });
+        await dispatcherOptions.deliver({ text: "Answer" }, { kind: "final" });
+        return { queuedFinal: true };
+      },
+    );
+
+    await dispatchWithContext({
+      context: createReasoningStreamContext(),
+      telegramCfg: {
+        streaming: {
+          mode: "partial",
+          preview: { toolProgress: true, interleavedProgress: true },
+        },
+      },
+    });
+
+    const lastReasoningUpdate = String(reasoningDraftStream.update.mock.calls.at(-1)?.[0]);
+    // Intervening reasoning must reset the status dedupe so the repeated `tool: Exec`
+    // still renders instead of being suppressed as a consecutive duplicate.
+    expect(lastReasoningUpdate.match(/tool: Exec/gu)?.length).toBe(2);
+  });
+
   it("replaces reasoning snapshots on the reasoning lane", async () => {
     const { reasoningDraftStream } = setupDraftStreams({
       answerMessageId: 2001,
