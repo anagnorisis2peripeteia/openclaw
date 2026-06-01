@@ -247,6 +247,35 @@ export const SessionsPluginPatchResultSchema = Type.Object(
   { additionalProperties: false },
 );
 
+export const SessionsEchoParamsSchema = Type.Object(
+  {
+    key: NonEmptyString,
+    action: Type.Optional(
+      Type.Union([Type.Literal("add"), Type.Literal("remove"), Type.Literal("list")]),
+    ),
+    channel: Type.Optional(NonEmptyString),
+    to: Type.Optional(NonEmptyString),
+    accountId: Type.Optional(NonEmptyString),
+    threadId: Type.Optional(NonEmptyString),
+    label: Type.Optional(NonEmptyString),
+    echoUser: Type.Optional(Type.Boolean()),
+    echoAssistant: Type.Optional(Type.Boolean()),
+  },
+  { additionalProperties: false },
+);
+
+export type SessionsEchoParams = {
+  key: string;
+  action?: "add" | "remove" | "list";
+  channel?: string;
+  to?: string;
+  accountId?: string;
+  threadId?: string;
+  label?: string;
+  echoUser?: boolean;
+  echoAssistant?: boolean;
+};
+
 export const SessionsResetParamsSchema = Type.Object(
   {
     key: NonEmptyString,

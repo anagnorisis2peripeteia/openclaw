@@ -332,6 +332,8 @@ import {
   SessionsMessagesUnsubscribeParamsSchema,
   type SessionsPatchParams,
   SessionsPatchParamsSchema,
+  type SessionsEchoParams,
+  SessionsEchoParamsSchema,
   type SessionsPluginPatchParams,
   SessionsPluginPatchParamsSchema,
   type SessionsPreviewParams,
@@ -621,6 +623,8 @@ export const validateSessionsAbortParams =
   lazyCompile<SessionsAbortParams>(SessionsAbortParamsSchema);
 export const validateSessionsPatchParams =
   lazyCompile<SessionsPatchParams>(SessionsPatchParamsSchema);
+export const validateSessionsEchoParams =
+  lazyCompile<SessionsEchoParams>(SessionsEchoParamsSchema);
 export const validateSessionsPluginPatchParams = lazyCompile<SessionsPluginPatchParams>(
   SessionsPluginPatchParamsSchema,
 );
@@ -983,6 +987,7 @@ export {
   SessionsSendParamsSchema,
   SessionsAbortParamsSchema,
   SessionsPatchParamsSchema,
+  SessionsEchoParamsSchema,
   SessionsPluginPatchParamsSchema,
   SessionsResetParamsSchema,
   SessionsDeleteParamsSchema,

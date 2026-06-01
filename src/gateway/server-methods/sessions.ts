@@ -25,6 +25,7 @@ import {
   validateSessionsMessagesSubscribeParams,
   validateSessionsMessagesUnsubscribeParams,
   validateSessionsPatchParams,
+  validateSessionsEchoParams,
   validateSessionsPluginPatchParams,
   validateSessionsPreviewParams,
   validateSessionsResetParams,
@@ -2259,23 +2260,21 @@ export const sessionsHandlers: GatewayRequestHandlers = {
       reason: "patch",
     });
   },
-  "sessions.echo": async ({ params, respond, context }) => {
-    const p = params as {
-      key?: string;
-      action?: "add" | "remove" | "list";
-      channel?: string;
-      to?: string;
-      accountId?: string;
-      threadId?: string;
-      label?: string;
-      echoUser?: boolean;
-      echoAssistant?: boolean;
-    };
+  "sessions.echo": async ({ params, respond, context, client, isWebchatConnect }) => {
+    if (!assertValidParams(params, validateSessionsEchoParams, "sessions.echo", respond)) {
+      return;
+    }
+    const p = params;
     const key = requireSessionKey(p.key, respond);
     if (!key) {
       return;
     }
     const action = p.action ?? "list";
+    if (action !== "list") {
+      if (rejectWebchatSessionMutation({ action: "echo", client, isWebchatConnect, respond })) {
+        return;
+      }
+    }
     const { cfg, target, storePath } = resolveGatewaySessionTargetFromKey(
       key,
       context.getRuntimeConfig(),

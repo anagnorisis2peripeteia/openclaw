@@ -46,6 +46,7 @@ function fireEchoToTargets(params: {
   originChannel: string;
   originTo: string;
   originAccountId?: string;
+  originThreadId?: string | number;
   role: "user" | "assistant";
   content: string;
 }): void {
@@ -53,6 +54,7 @@ function fireEchoToTargets(params: {
     originChannel: params.originChannel,
     originTo: params.originTo,
     originAccountId: params.originAccountId,
+    originThreadId: params.originThreadId,
     role: params.role,
   });
 
@@ -118,6 +120,7 @@ async function handleMessageSent(event: InternalHookEvent): Promise<void> {
     originChannel,
     originTo,
     originAccountId: ctx.accountId,
+    originThreadId: entry.lastThreadId,
     role: "assistant",
     content: ctx.content,
   });
@@ -130,6 +133,7 @@ async function handleMessageReceived(event: InternalHookEvent): Promise<void> {
     channelId?: string;
     accountId?: string;
     conversationId?: string;
+    metadata?: { threadId?: string | number };
   } | null;
 
   if (!ctx?.content || !event.sessionKey) {
@@ -152,6 +156,7 @@ async function handleMessageReceived(event: InternalHookEvent): Promise<void> {
     originChannel,
     originTo,
     originAccountId: ctx.accountId,
+    originThreadId: ctx.metadata?.threadId ?? entry.lastThreadId,
     role: "user",
     content: ctx.content,
   });
