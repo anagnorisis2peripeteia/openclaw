@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveEchoTargets } from "./echo.js";
+import { resolveEchoTargets, _isEchoDeliveryInProgress } from "./echo.js";
 import type { SessionEntry, SessionEchoTarget } from "../../config/sessions/types.js";
 
 function makeEntry(targets: SessionEchoTarget[]): SessionEntry {
@@ -104,5 +104,11 @@ describe("resolveEchoTargets", () => {
       role: "user",
     });
     expect(result).toHaveLength(2);
+  });
+});
+
+describe("echo re-entrancy guard", () => {
+  it("guard is not set outside of delivery", () => {
+    expect(_isEchoDeliveryInProgress()).toBe(false);
   });
 });

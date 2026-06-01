@@ -69,6 +69,7 @@ export async function sessionsEchoAddCommand(
     addedAt: Date.now(),
   } as SessionEchoTarget;
 
+  let wasDuplicate = false;
   const result = await patchSessionEntry({
     storePath,
     sessionKey: opts.sessionKey,
@@ -83,6 +84,7 @@ export async function sessionsEchoAddCommand(
           String(t.threadId ?? "") === String(newTarget.threadId ?? ""),
       );
       if (duplicate) {
+        wasDuplicate = true;
         return null;
       }
       return { echoTargets: [...existing, newTarget] };
@@ -96,7 +98,15 @@ export async function sessionsEchoAddCommand(
   }
 
   if (opts.json) {
-    writeRuntimeJson(runtime, { ok: true, echoTargets: result.echoTargets ?? [] });
+    writeRuntimeJson(runtime, {
+      ok: true,
+      added: !wasDuplicate,
+      echoTargets: result.echoTargets ?? [],
+    });
+  } else if (wasDuplicate) {
+    runtime.log(
+      `${theme.muted("Already exists:")} echo target ${opts.channel} -> ${opts.to}`,
+    );
   } else {
     runtime.log(
       `${theme.success("Added")} echo target: ${opts.channel} -> ${opts.to}${opts.label ? ` (${opts.label})` : ""}`,
@@ -110,6 +120,7 @@ export async function sessionsEchoRemoveCommand(
 ): Promise<void> {
   const storePath = resolveStorePath(opts, runtime);
 
+  let wasNotFound = false;
   const result = await patchSessionEntry({
     storePath,
     sessionKey: opts.sessionKey,
@@ -126,6 +137,7 @@ export async function sessionsEchoRemoveCommand(
           ),
       );
       if (filtered.length === existing.length) {
+        wasNotFound = true;
         return null;
       }
       return { echoTargets: filtered.length > 0 ? filtered : undefined };
@@ -139,7 +151,15 @@ export async function sessionsEchoRemoveCommand(
   }
 
   if (opts.json) {
-    writeRuntimeJson(runtime, { ok: true, echoTargets: result.echoTargets ?? [] });
+    writeRuntimeJson(runtime, {
+      ok: true,
+      removed: !wasNotFound,
+      echoTargets: result.echoTargets ?? [],
+    });
+  } else if (wasNotFound) {
+    runtime.log(
+      `${theme.muted("Not found:")} echo target ${opts.channel} -> ${opts.to}`,
+    );
   } else {
     runtime.log(`${theme.success("Removed")} echo target: ${opts.channel} -> ${opts.to}`);
   }

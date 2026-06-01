@@ -7,6 +7,8 @@ import { deliverOutboundPayloadsInternal } from "./deliver.js";
 
 const log = createSubsystemLogger("outbound/echo");
 
+let echoDeliveryInProgress = false;
+
 export type EchoDeliveryContext = {
   cfg: OpenClawConfig;
   sessionKey: string;
@@ -70,10 +72,16 @@ function prefixPayloads(payloads: ReplyPayload[], prefix: string): ReplyPayload[
   });
 }
 
+// Intentionally omits `session`/`mirror` from deliverOutboundPayloadsInternal
+// so the delivery never re-emits the internal `message:sent` hook (which would
+// create an infinite echo loop). The re-entrancy guard is a safety net.
 export function fireEchoDeliveries(
   ctx: EchoDeliveryContext,
   payloads: ReplyPayload[],
 ): void {
+  if (echoDeliveryInProgress) {
+    return;
+  }
   const targets = resolveEchoTargets(ctx.sessionEntry, {
     originChannel: ctx.originChannel,
     originTo: ctx.originTo,
@@ -89,21 +97,31 @@ export function fireEchoDeliveries(
   const prefix = formatEchoPrefix(ctx);
   const echoPayloads = prefixPayloads(payloads, prefix);
 
-  for (const target of targets) {
-    deliverOutboundPayloadsInternal({
-      cfg: ctx.cfg,
-      channel: target.channel as Exclude<string, "none">,
-      to: target.to,
-      accountId: target.accountId,
-      threadId: target.threadId,
-      payloads: echoPayloads,
-      bestEffort: true,
-      skipQueue: true,
-      silent: true,
-    }).catch((err: unknown) => {
-      log.warn(
-        `Echo delivery failed for ${target.channel}:${target.to}: ${formatErrorMessage(err)}`,
-      );
-    });
+  echoDeliveryInProgress = true;
+  try {
+    for (const target of targets) {
+      deliverOutboundPayloadsInternal({
+        cfg: ctx.cfg,
+        channel: target.channel as Exclude<string, "none">,
+        to: target.to,
+        accountId: target.accountId,
+        threadId: target.threadId,
+        payloads: echoPayloads,
+        bestEffort: true,
+        skipQueue: true,
+        silent: true,
+      }).catch((err: unknown) => {
+        log.warn(
+          `Echo delivery failed for ${target.channel}:${target.to}: ${formatErrorMessage(err)}`,
+        );
+      });
+    }
+  } finally {
+    echoDeliveryInProgress = false;
   }
+}
+
+/** @internal Exposed for testing only. */
+export function _isEchoDeliveryInProgress(): boolean {
+  return echoDeliveryInProgress;
 }
