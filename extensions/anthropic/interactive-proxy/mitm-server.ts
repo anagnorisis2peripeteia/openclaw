@@ -26,7 +26,6 @@ export type MitmProxyHandle = {
 };
 
 const UPSTREAM_HOST = "api.anthropic.com";
-const UPSTREAM_PORT = 443;
 
 export async function startMitmProxy(certs: CertPaths): Promise<MitmProxyHandle> {
   const eventHandlers: Array<(evt: Record<string, unknown>) => void> = [];
@@ -38,23 +37,17 @@ export async function startMitmProxy(certs: CertPaths): Promise<MitmProxyHandle>
   // accumulator. Reset is unnecessary — the counter only needs to be
   // unique within a single wrapper invocation's lifetime.
   let nextReqId = 1;
-  // Track last stop_reason across requests. After "max_tokens", the next
-  // request is either a higher-limit retry (same last user msg) or compaction
-  // (new compaction prompt as last user msg — caught by content markers).
-  // Kept for future heuristics; not used as a standalone classifier because
-  // max_output_tokens_recovery also follows max_tokens and we'd misclassify
-  // legitimate retries as compaction.
-  let lastStopReason = "";
+  // True once any request this run advertised the `Agent` (Task) tool. The
+  // Agent tool is what spawns Task/research sub-agents, so a tool-bearing
+  // request that LACKS Agent is only a sub-agent once Agent has been seen (i.e.
+  // it's enabled). If Agent never appears (operator deny-listed it), no Task
+  // sub-agent can exist and an Agent-less request is the primary — which must
+  // keep its turn-end rather than be suppressed into a hang.
+  let agentToolSeenThisRun = false;
 
   function emitEvent(evt: Record<string, unknown>): void {
     for (const h of eventHandlers) {
       h(evt);
-    }
-    if (evt.type === "message_delta") {
-      const delta = evt.delta as Record<string, unknown> | undefined;
-      if (typeof delta?.stop_reason === "string") {
-        lastStopReason = delta.stop_reason;
-      }
     }
   }
 
@@ -124,7 +117,8 @@ export async function startMitmProxy(certs: CertPaths): Promise<MitmProxyHandle>
       // the same last user message — using stop_reason as a classifier would
       // misclassify those retries as compaction and drop them.
       let reqBody: string | undefined;
-      let requestType: "normal" | "compaction" | "tool_followup" | "auxiliary" = "normal";
+      let requestType: "normal" | "compaction" | "tool_followup" | "auxiliary" | "subagent" =
+        "normal";
       if (req.method === "POST") {
         reqBody = await req.text();
         try {
@@ -170,6 +164,42 @@ export async function startMitmProxy(certs: CertPaths): Promise<MitmProxyHandle>
           // injecting MCP tools into every interactive claude invocation.
           if (requestType === "normal" && !hasTools) {
             requestType = "auxiliary";
+          }
+          // Sub-agent detection. claude-code's primary turn carries the `Agent`
+          // (Task) tool; sub-agents (research/Explore Tasks, web search) are
+          // spawned WITHOUT it (no recursion), so their end_turn must NOT end
+          // the primary turn (the wrapper handles "subagent" like
+          // compaction-plus). The discriminator is the Agent tool — but absence
+          // of Agent only implies a sub-agent once we've actually SEEN Agent
+          // this run, because the Agent tool is also what *spawns* Task
+          // sub-agents: if an operator deny-lists Agent, the primary itself has
+          // no Agent and no Task sub-agent can exist, so it must NOT be
+          // suppressed. A max_tokens retry of the primary still carries `Agent`.
+          if (requestType === "normal" || requestType === "tool_followup") {
+            const toolList = Array.isArray(parsed.tools) ? parsed.tools : [];
+            const hasAgentTool = toolList.some((t) => t?.name === "Agent");
+            if (hasAgentTool) {
+              agentToolSeenThisRun = true;
+            }
+            const usesServerWebSearch = toolList.some(
+              (t) => typeof t?.type === "string" && t.type.includes("web_search"),
+            );
+            // Task/research sub-agents only appear AFTER the Agent-bearing
+            // primary, so a tool-bearing no-Agent request is one only once Agent
+            // has been seen this run. If Agent never appears, this IS the
+            // primary — keep its turn-end, else it rewrites to thinking, emits
+            // no result, and hangs until the watchdog kills it.
+            const isTaskSubagent = !hasAgentTool && agentToolSeenThisRun;
+            // A web_search sub-agent is a tiny dedicated stream (server-side
+            // web_search, no Agent, no broad toolset); it is NOT gated by the
+            // Agent tool, so catch it even when Agent is off. The bounded tool
+            // count keeps a full primary — which always carries many tools —
+            // from being misread when it requests web_search itself.
+            const isWebSearchSubagent =
+              usesServerWebSearch && !hasAgentTool && toolList.length <= 3;
+            if (isTaskSubagent || isWebSearchSubagent) {
+              requestType = "subagent";
+            }
           }
         } catch {
           // Body isn't JSON (shouldn't happen on /v1/messages). Leave the
@@ -220,7 +250,17 @@ export async function startMitmProxy(certs: CertPaths): Promise<MitmProxyHandle>
           } catch {
             // leave as raw text
           }
-          emitEvent({ type: "api_error", status, body: parsedBody });
+          // Tag the error with its originating request id + classification so
+          // the wrapper only terminalizes the user-facing turn — a transient
+          // 4xx/5xx on a concurrent auxiliary/sub-agent request must NOT abort
+          // an otherwise-valid main turn.
+          emitEvent({
+            type: "api_error",
+            status,
+            body: parsedBody,
+            _reqId: reqId,
+            _requestType: requestType,
+          });
           return new Response(bodyText, { status, headers: respHeaders });
         }
         return new Response(upstream.body, { status, headers: respHeaders });
@@ -346,7 +386,9 @@ export async function startMitmProxy(certs: CertPaths): Promise<MitmProxyHandle>
     },
     async stop() {
       tlsServer.stop(true);
-      await new Promise<void>((resolve) => connectServer.close(() => resolve()));
+      await new Promise<void>((resolve) => {
+        connectServer.close(() => resolve());
+      });
     },
   };
 }
