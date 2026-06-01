@@ -336,6 +336,8 @@ export function registerStatusHealthSessionsCommands(program: Command) {
     .requiredOption("--session-key <key>", "Session key")
     .requiredOption("--channel <channel>", "Target channel to remove")
     .requiredOption("--to <id>", "Target recipient/chat id to remove")
+    .option("--account-id <id>", "Target account id")
+    .option("--thread-id <id>", "Target thread id")
     .option("--store <path>", "Path to session store")
     .option("--agent <id>", "Agent id")
     .option("--json", "Output JSON", false)
@@ -350,6 +352,8 @@ export function registerStatusHealthSessionsCommands(program: Command) {
             sessionKey: opts.sessionKey as string,
             channel: opts.channel as string,
             to: opts.to as string,
+            accountId: opts.accountId as string | undefined,
+            threadId: opts.threadId as string | undefined,
             store: (opts.store as string | undefined) ?? parentOpts?.store,
             agent: (opts.agent as string | undefined) ?? parentOpts?.agent,
             json: Boolean(opts.json || parentOpts?.json),

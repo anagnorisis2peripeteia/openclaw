@@ -22,22 +22,41 @@ export function registerEchoHook(): void {
   }
   registered = true;
   registerInternalHook("message:sent", handleMessageSent);
+  registerInternalHook("message:received", handleMessageReceived);
 }
 
-async function handleMessageSent(event: InternalHookEvent): Promise<void> {
-  const ctx = event.context as {
-    to?: string;
-    content?: string;
-    success?: boolean;
-    channelId?: string;
-    accountId?: string;
-    conversationId?: string;
-    messageId?: string;
-    isGroup?: boolean;
-    groupId?: string;
-  } | null;
+function resolveSessionEchoEntry(sessionKey: string): SessionEntry | undefined {
+  let cfg;
+  try {
+    cfg = getRuntimeConfig();
+  } catch {
+    return undefined;
+  }
+  const parsed = parseAgentSessionKey(sessionKey);
+  const storePath = resolveStorePath(cfg.session?.store, { agentId: parsed?.agentId });
+  try {
+    return readSessionEntry(storePath, sessionKey) as SessionEntry | undefined;
+  } catch {
+    return undefined;
+  }
+}
 
-  if (!ctx?.success || !ctx.content || !event.sessionKey) {
+function fireEchoToTargets(params: {
+  entry: SessionEntry;
+  originChannel: string;
+  originTo: string;
+  originAccountId?: string;
+  role: "user" | "assistant";
+  content: string;
+}): void {
+  const targets = resolveEchoTargets(params.entry, {
+    originChannel: params.originChannel,
+    originTo: params.originTo,
+    originAccountId: params.originAccountId,
+    role: params.role,
+  });
+
+  if (targets.length === 0) {
     return;
   }
 
@@ -48,40 +67,8 @@ async function handleMessageSent(event: InternalHookEvent): Promise<void> {
     return;
   }
 
-  const parsed = parseAgentSessionKey(event.sessionKey);
-  const agentId = parsed?.agentId;
-  const storePath = resolveStorePath(cfg.session?.store, { agentId });
-
-  let entry: SessionEntry | undefined;
-  try {
-    entry = readSessionEntry(storePath, event.sessionKey) as SessionEntry | undefined;
-  } catch {
-    return;
-  }
-
-  if (!entry?.echoTargets?.length) {
-    return;
-  }
-
-  const originChannel = ctx.channelId ?? "";
-  const originTo = ctx.to ?? "";
-  if (!originChannel || !originTo) {
-    return;
-  }
-
-  const targets = resolveEchoTargets(entry, {
-    originChannel,
-    originTo,
-    originAccountId: ctx.accountId,
-    role: "assistant",
-  });
-
-  if (targets.length === 0) {
-    return;
-  }
-
-  const prefix = `\u{1F916} [echo] `;
-  const echoPayloads = [{ text: prefix + ctx.content }];
+  const prefix = params.role === "user" ? `\u{1F4F1} [via ${params.originChannel}] ` : `\u{1F916} [echo] `;
+  const echoPayloads = [{ text: prefix + params.content }];
 
   for (const target of targets) {
     deliverOutboundPayloadsInternal({
@@ -100,4 +87,72 @@ async function handleMessageSent(event: InternalHookEvent): Promise<void> {
       );
     });
   }
+}
+
+async function handleMessageSent(event: InternalHookEvent): Promise<void> {
+  const ctx = event.context as {
+    to?: string;
+    content?: string;
+    success?: boolean;
+    channelId?: string;
+    accountId?: string;
+  } | null;
+
+  if (!ctx?.success || !ctx.content || !event.sessionKey) {
+    return;
+  }
+
+  const entry = resolveSessionEchoEntry(event.sessionKey);
+  if (!entry?.echoTargets?.length) {
+    return;
+  }
+
+  const originChannel = ctx.channelId ?? "";
+  const originTo = ctx.to ?? "";
+  if (!originChannel || !originTo) {
+    return;
+  }
+
+  fireEchoToTargets({
+    entry,
+    originChannel,
+    originTo,
+    originAccountId: ctx.accountId,
+    role: "assistant",
+    content: ctx.content,
+  });
+}
+
+async function handleMessageReceived(event: InternalHookEvent): Promise<void> {
+  const ctx = event.context as {
+    from?: string;
+    content?: string;
+    channelId?: string;
+    accountId?: string;
+    conversationId?: string;
+  } | null;
+
+  if (!ctx?.content || !event.sessionKey) {
+    return;
+  }
+
+  const entry = resolveSessionEchoEntry(event.sessionKey);
+  if (!entry?.echoTargets?.length) {
+    return;
+  }
+
+  const originChannel = ctx.channelId ?? "";
+  const originTo = ctx.conversationId ?? ctx.from ?? "";
+  if (!originChannel || !originTo) {
+    return;
+  }
+
+  fireEchoToTargets({
+    entry,
+    originChannel,
+    originTo,
+    originAccountId: ctx.accountId,
+    role: "user",
+    content: ctx.content,
+  });
 }

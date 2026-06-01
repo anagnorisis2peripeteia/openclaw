@@ -23,6 +23,8 @@ type EchoRemoveOpts = {
   sessionKey: string;
   channel: string;
   to: string;
+  accountId?: string;
+  threadId?: string;
   store?: string;
   agent?: string;
   json?: boolean;
@@ -74,7 +76,11 @@ export async function sessionsEchoAddCommand(
     update: (entry: SessionEntry) => {
       const existing = entry.echoTargets ?? [];
       const duplicate = existing.find(
-        (t) => t.channel === newTarget.channel && t.to === newTarget.to,
+        (t) =>
+          t.channel === newTarget.channel &&
+          t.to === newTarget.to &&
+          (t.accountId ?? "") === (newTarget.accountId ?? "") &&
+          String(t.threadId ?? "") === String(newTarget.threadId ?? ""),
       );
       if (duplicate) {
         return null;
@@ -111,7 +117,13 @@ export async function sessionsEchoRemoveCommand(
     update: (entry: SessionEntry) => {
       const existing = entry.echoTargets ?? [];
       const filtered = existing.filter(
-        (t) => !(t.channel === opts.channel && t.to === opts.to),
+        (t) =>
+          !(
+            t.channel === opts.channel &&
+            t.to === opts.to &&
+            (t.accountId ?? "") === (opts.accountId ?? "") &&
+            String(t.threadId ?? "") === String(opts.threadId ?? "")
+          ),
       );
       if (filtered.length === existing.length) {
         return null;

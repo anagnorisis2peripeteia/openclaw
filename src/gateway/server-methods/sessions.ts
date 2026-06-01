@@ -2303,7 +2303,11 @@ export const sessionsHandlers: GatewayRequestHandlers = {
 
       if (action === "add") {
         const duplicate = existing.find(
-          (t: { channel: string; to: string }) => t.channel === p.channel && t.to === p.to,
+          (t: { channel: string; to: string; accountId?: string; threadId?: string }) =>
+            t.channel === p.channel &&
+            t.to === p.to &&
+            (t.accountId ?? "") === (p.accountId ?? "") &&
+            String(t.threadId ?? "") === String(p.threadId ?? ""),
         );
         if (duplicate) {
           return entry;
@@ -2323,7 +2327,13 @@ export const sessionsHandlers: GatewayRequestHandlers = {
         ];
       } else if (action === "remove") {
         entry.echoTargets = existing.filter(
-          (t: { channel: string; to: string }) => !(t.channel === p.channel && t.to === p.to),
+          (t: { channel: string; to: string; accountId?: string; threadId?: string }) =>
+            !(
+              t.channel === p.channel &&
+              t.to === p.to &&
+              (t.accountId ?? "") === (p.accountId ?? "") &&
+              String(t.threadId ?? "") === String(p.threadId ?? "")
+            ),
         );
         if (entry.echoTargets.length === 0) {
           delete entry.echoTargets;
