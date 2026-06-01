@@ -3,6 +3,7 @@ import { getRuntimeConfig } from "../../config/config.js";
 import { readSessionEntry } from "../../config/sessions/store-load.js";
 import { resolveStorePath } from "../../config/sessions/paths.js";
 import { parseAgentSessionKey } from "../../routing/session-key.js";
+import { resolveDefaultAgentId } from "../../agents/agent-scope.js";
 import {
   registerInternalHook,
   type InternalHookEvent,
@@ -28,7 +29,10 @@ function resolveSessionEchoEntry(sessionKey: string): { cfg: ReturnType<typeof g
     return undefined;
   }
   const parsed = parseAgentSessionKey(sessionKey);
-  const storePath = resolveStorePath(cfg.session?.store, { agentId: parsed?.agentId });
+  // For selected-global sessions ("global" key without embedded agent),
+  // resolve the default agent so we read the correct agent-scoped store.
+  const agentId = parsed?.agentId ?? (sessionKey === "global" ? resolveDefaultAgentId(cfg) : undefined);
+  const storePath = resolveStorePath(cfg.session?.store, { agentId });
   try {
     const entry = readSessionEntry(storePath, sessionKey) as SessionEntry | undefined;
     if (!entry?.echoTargets?.length) {

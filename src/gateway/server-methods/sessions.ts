@@ -2275,11 +2275,17 @@ export const sessionsHandlers: GatewayRequestHandlers = {
         return;
       }
     }
-    const { target, storePath } = resolveGatewaySessionTargetFromKey(
-      key,
-      context.getRuntimeConfig(),
-      { agentId: p.agentId },
-    );
+
+    const cfg = context.getRuntimeConfig();
+    const requestedAgent = resolveRequestedGlobalAgentId(cfg, key, p.agentId);
+    if (!requestedAgent.ok) {
+      respond(false, undefined, requestedAgent.error);
+      return;
+    }
+    const requestedAgentId = requestedAgent.agentId;
+    const { target, storePath } = resolveGatewaySessionTargetFromKey(key, cfg, {
+      agentId: requestedAgentId,
+    });
 
     if (action === "list") {
       const store = loadSessionStore(storePath);
@@ -2367,6 +2373,9 @@ export const sessionsHandlers: GatewayRequestHandlers = {
     if (changed) {
       emitSessionsChanged(context, {
         sessionKey: target.canonicalKey ?? key,
+        ...(target.canonicalKey === "global" && requestedAgentId
+          ? { agentId: requestedAgentId }
+          : {}),
         reason: "echo",
       });
     }
