@@ -2289,7 +2289,13 @@ export const sessionsHandlers: GatewayRequestHandlers = {
 
     if (action === "list") {
       const store = loadSessionStore(storePath);
-      const entry = store[target.canonicalKey ?? key];
+      const { primaryKey } = migrateAndPruneGatewaySessionStoreKey({
+        cfg,
+        key,
+        store,
+        agentId: requestedAgentId,
+      });
+      const entry = store[primaryKey];
       respond(true, { echoTargets: entry?.echoTargets ?? [] }, undefined);
       return;
     }
@@ -2303,8 +2309,13 @@ export const sessionsHandlers: GatewayRequestHandlers = {
     let atLimit = false;
     const MAX_ECHO_TARGETS = 16;
     const updated = await updateSessionStore(storePath, (store) => {
-      const storeKey = target.canonicalKey ?? key;
-      const entry = store[storeKey];
+      const { primaryKey } = migrateAndPruneGatewaySessionStoreKey({
+        cfg,
+        key,
+        store,
+        agentId: requestedAgentId,
+      });
+      const entry = store[primaryKey];
       if (!entry) {
         return null;
       }
