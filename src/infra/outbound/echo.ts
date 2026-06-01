@@ -7,8 +7,6 @@ import { deliverOutboundPayloadsInternal } from "./deliver.js";
 
 const log = createSubsystemLogger("outbound/echo");
 
-let echoDeliveryInProgress = false;
-
 export type EchoDeliveryContext = {
   cfg: OpenClawConfig;
   sessionKey: string;
@@ -72,16 +70,16 @@ function prefixPayloads(payloads: ReplyPayload[], prefix: string): ReplyPayload[
   });
 }
 
-// Intentionally omits `session`/`mirror` from deliverOutboundPayloadsInternal
-// so the delivery never re-emits the internal `message:sent` hook (which would
-// create an infinite echo loop). The re-entrancy guard is a safety net.
+// SAFETY: This function MUST NOT pass `session` or `mirror` to
+// deliverOutboundPayloadsInternal. Those params set sessionKeyForInternalHooks
+// (deliver.ts:1544), which gates the internal `message:sent` hook
+// (deliver.ts:1003). If that hook fires for echo deliveries, echo-hook.ts
+// re-enters fireEchoDeliveries -> infinite loop. Omitting session/mirror
+// keeps canEmitInternalHook=false and breaks the cycle.
 export function fireEchoDeliveries(
   ctx: EchoDeliveryContext,
   payloads: ReplyPayload[],
 ): void {
-  if (echoDeliveryInProgress) {
-    return;
-  }
   const targets = resolveEchoTargets(ctx.sessionEntry, {
     originChannel: ctx.originChannel,
     originTo: ctx.originTo,
@@ -97,31 +95,21 @@ export function fireEchoDeliveries(
   const prefix = formatEchoPrefix(ctx);
   const echoPayloads = prefixPayloads(payloads, prefix);
 
-  echoDeliveryInProgress = true;
-  try {
-    for (const target of targets) {
-      deliverOutboundPayloadsInternal({
-        cfg: ctx.cfg,
-        channel: target.channel as Exclude<string, "none">,
-        to: target.to,
-        accountId: target.accountId,
-        threadId: target.threadId,
-        payloads: echoPayloads,
-        bestEffort: true,
-        skipQueue: true,
-        silent: true,
-      }).catch((err: unknown) => {
-        log.warn(
-          `Echo delivery failed for ${target.channel}:${target.to}: ${formatErrorMessage(err)}`,
-        );
-      });
-    }
-  } finally {
-    echoDeliveryInProgress = false;
+  for (const target of targets) {
+    deliverOutboundPayloadsInternal({
+      cfg: ctx.cfg,
+      channel: target.channel as Exclude<string, "none">,
+      to: target.to,
+      accountId: target.accountId,
+      threadId: target.threadId,
+      payloads: echoPayloads,
+      bestEffort: true,
+      skipQueue: true,
+      silent: true,
+    }).catch((err: unknown) => {
+      log.warn(
+        `Echo delivery failed for ${target.channel}:${target.to}: ${formatErrorMessage(err)}`,
+      );
+    });
   }
-}
-
-/** @internal Exposed for testing only. */
-export function _isEchoDeliveryInProgress(): boolean {
-  return echoDeliveryInProgress;
 }

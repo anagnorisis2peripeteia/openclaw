@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { resolveEchoTargets, fireEchoDeliveries, _isEchoDeliveryInProgress } from "./echo.js";
+import { resolveEchoTargets, fireEchoDeliveries } from "./echo.js";
 import type { SessionEntry, SessionEchoTarget } from "../../config/sessions/types.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 
@@ -123,7 +123,7 @@ describe("fireEchoDeliveries", () => {
     mockDeliver.mockResolvedValue(undefined as never);
   });
 
-  it("calls deliverOutboundPayloadsInternal without session or mirror (loop safety)", () => {
+  it("never passes session or mirror to deliver (loop-safety contract)", () => {
     const entry = makeEntry([{ channel: "discord", to: "999", echoUser: true, echoAssistant: true }]);
     fireEchoDeliveries(
       {
@@ -141,9 +141,11 @@ describe("fireEchoDeliveries", () => {
     const callArgs = mockDeliver.mock.calls[0][0] as Record<string, unknown>;
     expect(callArgs).not.toHaveProperty("session");
     expect(callArgs).not.toHaveProperty("mirror");
+    expect(callArgs).toHaveProperty("bestEffort", true);
+    expect(callArgs).toHaveProperty("silent", true);
   });
 
-  it("prefixes assistant echo with robot emoji", () => {
+  it("prefixes assistant echo payload with [echo]", () => {
     const entry = makeEntry([{ channel: "discord", to: "999", echoUser: true, echoAssistant: true }]);
     fireEchoDeliveries(
       {
@@ -162,7 +164,7 @@ describe("fireEchoDeliveries", () => {
     expect(payloads[0].text).toMatch(/\[echo\] hello$/);
   });
 
-  it("prefixes user echo with phone emoji and channel name", () => {
+  it("prefixes user echo payload with [via <channel>]", () => {
     const entry = makeEntry([{ channel: "discord", to: "999", echoUser: true, echoAssistant: true }]);
     fireEchoDeliveries(
       {
@@ -181,25 +183,9 @@ describe("fireEchoDeliveries", () => {
     expect(payloads[0].text).toMatch(/\[via telegram\] hi there$/);
   });
 
-  it("skips delivery when re-entrancy guard is active", () => {
-    let reentrantCallCount = 0;
-    mockDeliver.mockImplementation((() => {
-      fireEchoDeliveries(
-        {
-          cfg: fakeCfg,
-          sessionKey: "agent:main",
-          sessionEntry: makeEntry([{ channel: "slack", to: "C02", echoUser: true, echoAssistant: true }]),
-          originChannel: "discord",
-          originTo: "999",
-          role: "assistant",
-        },
-        [{ text: "reentrant" }],
-      );
-      reentrantCallCount++;
-      return Promise.resolve();
-    }) as never);
-
+  it("preserves non-text payloads without prefix", () => {
     const entry = makeEntry([{ channel: "discord", to: "999", echoUser: true, echoAssistant: true }]);
+    const mediaPayload = { media: "image.png" } as unknown as ReplyPayload;
     fireEchoDeliveries(
       {
         cfg: fakeCfg,
@@ -209,18 +195,40 @@ describe("fireEchoDeliveries", () => {
         originTo: "123",
         role: "assistant",
       },
+      [mediaPayload],
+    );
+
+    const callArgs = mockDeliver.mock.calls[0][0] as Record<string, unknown>;
+    const payloads = callArgs.payloads as Array<Record<string, unknown>>;
+    expect(payloads[0]).toEqual(mediaPayload);
+  });
+
+  it("delivers to each resolved target independently", () => {
+    const entry = makeEntry([
+      { channel: "discord", to: "111", echoUser: true, echoAssistant: true },
+      { channel: "slack", to: "222", echoUser: true, echoAssistant: true },
+    ]);
+    fireEchoDeliveries(
+      {
+        cfg: fakeCfg,
+        sessionKey: "agent:main",
+        sessionEntry: entry,
+        originChannel: "telegram",
+        originTo: "999",
+        role: "assistant",
+      },
       [{ text: "hello" }],
     );
 
-    expect(mockDeliver).toHaveBeenCalledOnce();
-    expect(reentrantCallCount).toBe(1);
+    expect(mockDeliver).toHaveBeenCalledTimes(2);
+    const channels = mockDeliver.mock.calls.map(
+      (c) => (c[0] as Record<string, unknown>).channel,
+    );
+    expect(channels).toContain("discord");
+    expect(channels).toContain("slack");
   });
 
-  it("guard is not set outside of delivery", () => {
-    expect(_isEchoDeliveryInProgress()).toBe(false);
-  });
-
-  it("does not deliver to targets filtered by self-exclusion", () => {
+  it("does not deliver when all targets are self-excluded", () => {
     const entry = makeEntry([{ channel: "telegram", to: "123", echoUser: true, echoAssistant: true }]);
     fireEchoDeliveries(
       {
@@ -236,4 +244,24 @@ describe("fireEchoDeliveries", () => {
 
     expect(mockDeliver).not.toHaveBeenCalled();
   });
+
+  it("does not deliver when entry has no echo targets", () => {
+    const entry = makeEntry([]);
+    fireEchoDeliveries(
+      {
+        cfg: fakeCfg,
+        sessionKey: "agent:main",
+        sessionEntry: entry,
+        originChannel: "telegram",
+        originTo: "123",
+        role: "assistant",
+      },
+      [{ text: "hello" }],
+    );
+
+    expect(mockDeliver).not.toHaveBeenCalled();
+  });
 });
+
+// Type import for the non-text payload test
+import type { ReplyPayload } from "../../auto-reply/types.js";
