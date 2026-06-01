@@ -2294,6 +2294,7 @@ export const sessionsHandlers: GatewayRequestHandlers = {
     }
 
     let changed = false;
+    let atLimit = false;
     const MAX_ECHO_TARGETS = 16;
     const updated = await updateSessionStore(storePath, (store) => {
       const storeKey = target.canonicalKey ?? key;
@@ -2305,6 +2306,7 @@ export const sessionsHandlers: GatewayRequestHandlers = {
 
       if (action === "add") {
         if (existing.length >= MAX_ECHO_TARGETS) {
+          atLimit = true;
           return entry;
         }
         const duplicate = existing.find(
@@ -2343,8 +2345,9 @@ export const sessionsHandlers: GatewayRequestHandlers = {
         );
         if (filtered.length !== existing.length) {
           changed = true;
-          entry.echoTargets = filtered.length > 0 ? filtered : undefined;
-          if (!entry.echoTargets) {
+          if (filtered.length > 0) {
+            entry.echoTargets = filtered;
+          } else {
             delete entry.echoTargets;
           }
         }
@@ -2354,6 +2357,10 @@ export const sessionsHandlers: GatewayRequestHandlers = {
 
     if (!updated) {
       respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, `Session not found: ${key}`));
+      return;
+    }
+    if (atLimit) {
+      respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, `Echo target limit reached (max ${MAX_ECHO_TARGETS})`));
       return;
     }
     respond(true, { changed, echoTargets: updated.echoTargets ?? [] }, undefined);
