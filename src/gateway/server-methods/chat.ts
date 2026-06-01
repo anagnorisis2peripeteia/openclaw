@@ -57,6 +57,7 @@ import { formatErrorMessage, formatUncaughtError } from "../../infra/errors.js";
 import { jsonUtf8Bytes } from "../../infra/json-utf8-bytes.js";
 import { normalizeReplyPayloadsForDelivery } from "../../infra/outbound/payloads.js";
 import { getSessionBindingService } from "../../infra/outbound/session-binding-service.js";
+import { fireEchoDeliveries } from "../../infra/outbound/echo.js";
 import { logLargePayload } from "../../logging/diagnostic-payload.js";
 import {
   appendLocalMediaParentRoots,
@@ -3797,6 +3798,24 @@ export const chatHandlers: GatewayRequestHandlers = {
                     agentId,
                     message,
                   });
+                  if (displayReply) {
+                    const echoEntry = entry ?? loadSessionEntry(sessionKey, sessionLoadOptions).entry;
+                    if (echoEntry?.echoTargets?.length) {
+                      fireEchoDeliveries(
+                        {
+                          cfg,
+                          sessionKey,
+                          sessionEntry: echoEntry,
+                          originChannel: p.originatingChannel ?? "webchat",
+                          originTo: p.originatingTo ?? "",
+                          originAccountId: p.originatingAccountId,
+                          originThreadId: p.originatingThreadId,
+                          role: "assistant",
+                        },
+                        [{ text: displayReply }],
+                      );
+                    }
+                  }
                 }
               } else {
                 const sourceReplyPayloads = deliveredReplies
@@ -4104,6 +4123,24 @@ export const chatHandlers: GatewayRequestHandlers = {
                       message,
                     });
                     broadcastedSourceReplyFinal = true;
+                    if (sourceReplyText) {
+                      const echoEntry = entry ?? loadSessionEntry(sessionKey, sessionLoadOptions).entry;
+                      if (echoEntry?.echoTargets?.length) {
+                        fireEchoDeliveries(
+                          {
+                            cfg,
+                            sessionKey,
+                            sessionEntry: echoEntry,
+                            originChannel: p.originatingChannel ?? "webchat",
+                            originTo: p.originatingTo ?? "",
+                            originAccountId: p.originatingAccountId,
+                            originThreadId: p.originatingThreadId,
+                            role: "assistant",
+                          },
+                          [{ text: sourceReplyText }],
+                        );
+                      }
+                    }
                   }
                 }
               }
