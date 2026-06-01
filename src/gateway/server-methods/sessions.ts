@@ -2293,6 +2293,7 @@ export const sessionsHandlers: GatewayRequestHandlers = {
       return;
     }
 
+    let changed = false;
     const updated = await updateSessionStore(storePath, (store) => {
       const storeKey = target.canonicalKey ?? key;
       const entry = store[storeKey];
@@ -2312,6 +2313,7 @@ export const sessionsHandlers: GatewayRequestHandlers = {
         if (duplicate) {
           return entry;
         }
+        changed = true;
         entry.echoTargets = [
           ...existing,
           {
@@ -2326,7 +2328,7 @@ export const sessionsHandlers: GatewayRequestHandlers = {
           },
         ];
       } else if (action === "remove") {
-        entry.echoTargets = existing.filter(
+        const filtered = existing.filter(
           (t: { channel: string; to: string; accountId?: string; threadId?: string }) =>
             !(
               t.channel === p.channel &&
@@ -2335,8 +2337,12 @@ export const sessionsHandlers: GatewayRequestHandlers = {
               String(t.threadId ?? "") === String(p.threadId ?? "")
             ),
         );
-        if (entry.echoTargets.length === 0) {
-          delete entry.echoTargets;
+        if (filtered.length !== existing.length) {
+          changed = true;
+          entry.echoTargets = filtered.length > 0 ? filtered : undefined;
+          if (!entry.echoTargets) {
+            delete entry.echoTargets;
+          }
         }
       }
       return entry;
@@ -2346,11 +2352,13 @@ export const sessionsHandlers: GatewayRequestHandlers = {
       respond(false, undefined, `Session not found: ${key}`);
       return;
     }
-    respond(true, { echoTargets: updated.echoTargets ?? [] }, undefined);
-    emitSessionsChanged(context, {
-      sessionKey: target.canonicalKey ?? key,
-      reason: "echo",
-    });
+    respond(true, { changed, echoTargets: updated.echoTargets ?? [] }, undefined);
+    if (changed) {
+      emitSessionsChanged(context, {
+        sessionKey: target.canonicalKey ?? key,
+        reason: "echo",
+      });
+    }
   },
   "sessions.pluginPatch": async ({ params, respond, context, client, isWebchatConnect }) => {
     if (

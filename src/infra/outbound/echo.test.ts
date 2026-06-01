@@ -1,10 +1,20 @@
-import { describe, expect, it } from "vitest";
-import { resolveEchoTargets, _isEchoDeliveryInProgress } from "./echo.js";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { resolveEchoTargets, fireEchoDeliveries, _isEchoDeliveryInProgress } from "./echo.js";
 import type { SessionEntry, SessionEchoTarget } from "../../config/sessions/types.js";
+import type { OpenClawConfig } from "../../config/types.openclaw.js";
+
+vi.mock("./deliver.js", () => ({
+  deliverOutboundPayloadsInternal: vi.fn(() => Promise.resolve()),
+}));
+
+import { deliverOutboundPayloadsInternal as _mockDeliver } from "./deliver.js";
+const mockDeliver = vi.mocked(_mockDeliver);
 
 function makeEntry(targets: SessionEchoTarget[]): SessionEntry {
   return { echoTargets: targets } as unknown as SessionEntry;
 }
+
+const fakeCfg = {} as OpenClawConfig;
 
 describe("resolveEchoTargets", () => {
   const target: SessionEchoTarget = {
@@ -107,8 +117,123 @@ describe("resolveEchoTargets", () => {
   });
 });
 
-describe("echo re-entrancy guard", () => {
+describe("fireEchoDeliveries", () => {
+  afterEach(() => {
+    mockDeliver.mockReset();
+    mockDeliver.mockResolvedValue(undefined as never);
+  });
+
+  it("calls deliverOutboundPayloadsInternal without session or mirror (loop safety)", () => {
+    const entry = makeEntry([{ channel: "discord", to: "999", echoUser: true, echoAssistant: true }]);
+    fireEchoDeliveries(
+      {
+        cfg: fakeCfg,
+        sessionKey: "agent:main",
+        sessionEntry: entry,
+        originChannel: "telegram",
+        originTo: "123",
+        role: "assistant",
+      },
+      [{ text: "hello" }],
+    );
+
+    expect(mockDeliver).toHaveBeenCalledOnce();
+    const callArgs = mockDeliver.mock.calls[0][0] as Record<string, unknown>;
+    expect(callArgs).not.toHaveProperty("session");
+    expect(callArgs).not.toHaveProperty("mirror");
+  });
+
+  it("prefixes assistant echo with robot emoji", () => {
+    const entry = makeEntry([{ channel: "discord", to: "999", echoUser: true, echoAssistant: true }]);
+    fireEchoDeliveries(
+      {
+        cfg: fakeCfg,
+        sessionKey: "agent:main",
+        sessionEntry: entry,
+        originChannel: "telegram",
+        originTo: "123",
+        role: "assistant",
+      },
+      [{ text: "hello" }],
+    );
+
+    const callArgs = mockDeliver.mock.calls[0][0] as Record<string, unknown>;
+    const payloads = callArgs.payloads as Array<{ text: string }>;
+    expect(payloads[0].text).toMatch(/\[echo\] hello$/);
+  });
+
+  it("prefixes user echo with phone emoji and channel name", () => {
+    const entry = makeEntry([{ channel: "discord", to: "999", echoUser: true, echoAssistant: true }]);
+    fireEchoDeliveries(
+      {
+        cfg: fakeCfg,
+        sessionKey: "agent:main",
+        sessionEntry: entry,
+        originChannel: "telegram",
+        originTo: "123",
+        role: "user",
+      },
+      [{ text: "hi there" }],
+    );
+
+    const callArgs = mockDeliver.mock.calls[0][0] as Record<string, unknown>;
+    const payloads = callArgs.payloads as Array<{ text: string }>;
+    expect(payloads[0].text).toMatch(/\[via telegram\] hi there$/);
+  });
+
+  it("skips delivery when re-entrancy guard is active", () => {
+    let reentrantCallCount = 0;
+    mockDeliver.mockImplementation((() => {
+      fireEchoDeliveries(
+        {
+          cfg: fakeCfg,
+          sessionKey: "agent:main",
+          sessionEntry: makeEntry([{ channel: "slack", to: "C02", echoUser: true, echoAssistant: true }]),
+          originChannel: "discord",
+          originTo: "999",
+          role: "assistant",
+        },
+        [{ text: "reentrant" }],
+      );
+      reentrantCallCount++;
+      return Promise.resolve();
+    }) as never);
+
+    const entry = makeEntry([{ channel: "discord", to: "999", echoUser: true, echoAssistant: true }]);
+    fireEchoDeliveries(
+      {
+        cfg: fakeCfg,
+        sessionKey: "agent:main",
+        sessionEntry: entry,
+        originChannel: "telegram",
+        originTo: "123",
+        role: "assistant",
+      },
+      [{ text: "hello" }],
+    );
+
+    expect(mockDeliver).toHaveBeenCalledOnce();
+    expect(reentrantCallCount).toBe(1);
+  });
+
   it("guard is not set outside of delivery", () => {
     expect(_isEchoDeliveryInProgress()).toBe(false);
+  });
+
+  it("does not deliver to targets filtered by self-exclusion", () => {
+    const entry = makeEntry([{ channel: "telegram", to: "123", echoUser: true, echoAssistant: true }]);
+    fireEchoDeliveries(
+      {
+        cfg: fakeCfg,
+        sessionKey: "agent:main",
+        sessionEntry: entry,
+        originChannel: "telegram",
+        originTo: "123",
+        role: "assistant",
+      },
+      [{ text: "hello" }],
+    );
+
+    expect(mockDeliver).not.toHaveBeenCalled();
   });
 });
