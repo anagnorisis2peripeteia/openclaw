@@ -2289,11 +2289,12 @@ export const sessionsHandlers: GatewayRequestHandlers = {
     }
 
     if (!p.channel || !p.to) {
-      respond(false, undefined, "channel and to are required for add/remove");
+      respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "channel and to are required for add/remove"));
       return;
     }
 
     let changed = false;
+    const MAX_ECHO_TARGETS = 16;
     const updated = await updateSessionStore(storePath, (store) => {
       const storeKey = target.canonicalKey ?? key;
       const entry = store[storeKey];
@@ -2303,6 +2304,9 @@ export const sessionsHandlers: GatewayRequestHandlers = {
       const existing = entry.echoTargets ?? [];
 
       if (action === "add") {
+        if (existing.length >= MAX_ECHO_TARGETS) {
+          return entry;
+        }
         const duplicate = existing.find(
           (t: { channel: string; to: string; accountId?: string; threadId?: string }) =>
             t.channel === p.channel &&
@@ -2349,7 +2353,7 @@ export const sessionsHandlers: GatewayRequestHandlers = {
     });
 
     if (!updated) {
-      respond(false, undefined, `Session not found: ${key}`);
+      respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, `Session not found: ${key}`));
       return;
     }
     respond(true, { changed, echoTargets: updated.echoTargets ?? [] }, undefined);

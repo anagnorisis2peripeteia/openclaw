@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { resolveEchoTargets, fireEchoDeliveries } from "./echo.js";
 import type { SessionEntry, SessionEchoTarget } from "../../config/sessions/types.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { ReplyPayload } from "../../auto-reply/types.js";
 
 vi.mock("./deliver.js", () => ({
   deliverOutboundPayloadsInternal: vi.fn(() => Promise.resolve()),
@@ -10,6 +11,19 @@ vi.mock("./deliver.js", () => ({
 import { deliverOutboundPayloadsInternal as _mockDeliver } from "./deliver.js";
 const mockDeliver = vi.mocked(_mockDeliver);
 
+function makeTarget(overrides?: Partial<SessionEchoTarget>): SessionEchoTarget {
+  return {
+    channel: "discord",
+    to: "123",
+    accountId: "bot1",
+    threadId: "456",
+    echoUser: true,
+    echoAssistant: true,
+    addedAt: 1700000000000,
+    ...overrides,
+  } as SessionEchoTarget;
+}
+
 function makeEntry(targets: SessionEchoTarget[]): SessionEntry {
   return { echoTargets: targets } as unknown as SessionEntry;
 }
@@ -17,14 +31,7 @@ function makeEntry(targets: SessionEchoTarget[]): SessionEntry {
 const fakeCfg = {} as OpenClawConfig;
 
 describe("resolveEchoTargets", () => {
-  const target: SessionEchoTarget = {
-    channel: "discord",
-    to: "123",
-    accountId: "bot1",
-    threadId: "456",
-    echoUser: true,
-    echoAssistant: true,
-  };
+  const target = makeTarget();
 
   it("returns empty when entry has no echoTargets", () => {
     expect(resolveEchoTargets(undefined, { originChannel: "telegram", originTo: "x", role: "user" })).toEqual([]);
@@ -53,6 +60,27 @@ describe("resolveEchoTargets", () => {
     expect(result).toEqual([target]);
   });
 
+  it("includes targets that differ only by accountId", () => {
+    const result = resolveEchoTargets(makeEntry([target]), {
+      originChannel: "discord",
+      originTo: "123",
+      originAccountId: "bot2",
+      originThreadId: "456",
+      role: "assistant",
+    });
+    expect(result).toEqual([target]);
+  });
+
+  it("treats defined accountId vs undefined as different (not self)", () => {
+    const result = resolveEchoTargets(makeEntry([target]), {
+      originChannel: "discord",
+      originTo: "123",
+      originThreadId: "456",
+      role: "assistant",
+    });
+    expect(result).toEqual([target]);
+  });
+
   it("includes targets that differ by threadId", () => {
     const result = resolveEchoTargets(makeEntry([target]), {
       originChannel: "discord",
@@ -65,7 +93,7 @@ describe("resolveEchoTargets", () => {
   });
 
   it("matches threadId via string coercion (number vs string)", () => {
-    const result = resolveEchoTargets(makeEntry([{ ...target, threadId: 456 }]), {
+    const result = resolveEchoTargets(makeEntry([makeTarget({ threadId: 456 as unknown as string })]), {
       originChannel: "discord",
       originTo: "123",
       originAccountId: "bot1",
@@ -76,7 +104,7 @@ describe("resolveEchoTargets", () => {
   });
 
   it("treats both-undefined threadId as same (self-match)", () => {
-    const noThread = { ...target, threadId: undefined };
+    const noThread = makeTarget({ threadId: undefined });
     const result = resolveEchoTargets(makeEntry([noThread]), {
       originChannel: "discord",
       originTo: "123",
@@ -87,7 +115,7 @@ describe("resolveEchoTargets", () => {
   });
 
   it("filters by echoUser=false for user role", () => {
-    const noUserEcho = { ...target, echoUser: false };
+    const noUserEcho = makeTarget({ echoUser: false, channel: "slack", to: "C01" });
     const result = resolveEchoTargets(makeEntry([noUserEcho]), {
       originChannel: "telegram",
       originTo: "999",
@@ -97,7 +125,7 @@ describe("resolveEchoTargets", () => {
   });
 
   it("filters by echoAssistant=false for assistant role", () => {
-    const noAssistantEcho = { ...target, echoAssistant: false };
+    const noAssistantEcho = makeTarget({ echoAssistant: false, channel: "slack", to: "C01" });
     const result = resolveEchoTargets(makeEntry([noAssistantEcho]), {
       originChannel: "telegram",
       originTo: "999",
@@ -106,8 +134,18 @@ describe("resolveEchoTargets", () => {
     expect(result).toEqual([]);
   });
 
+  it("includes target when echoUser/echoAssistant are undefined (default-include)", () => {
+    const defaults = makeTarget({ echoUser: undefined, echoAssistant: undefined, channel: "slack", to: "C01" });
+    expect(resolveEchoTargets(makeEntry([defaults]), {
+      originChannel: "telegram", originTo: "999", role: "user",
+    })).toEqual([defaults]);
+    expect(resolveEchoTargets(makeEntry([defaults]), {
+      originChannel: "telegram", originTo: "999", role: "assistant",
+    })).toEqual([defaults]);
+  });
+
   it("returns multiple non-origin targets", () => {
-    const t2: SessionEchoTarget = { channel: "slack", to: "C01", echoUser: true, echoAssistant: true };
+    const t2 = makeTarget({ channel: "slack", to: "C01" });
     const result = resolveEchoTargets(makeEntry([target, t2]), {
       originChannel: "telegram",
       originTo: "999",
@@ -124,7 +162,7 @@ describe("fireEchoDeliveries", () => {
   });
 
   it("never passes session or mirror to deliver (loop-safety contract)", () => {
-    const entry = makeEntry([{ channel: "discord", to: "999", echoUser: true, echoAssistant: true }]);
+    const entry = makeEntry([makeTarget({ channel: "discord", to: "999" })]);
     fireEchoDeliveries(
       {
         cfg: fakeCfg,
@@ -141,12 +179,15 @@ describe("fireEchoDeliveries", () => {
     const callArgs = mockDeliver.mock.calls[0][0] as Record<string, unknown>;
     expect(callArgs).not.toHaveProperty("session");
     expect(callArgs).not.toHaveProperty("mirror");
+    expect(Object.keys(callArgs)).toEqual(
+      expect.arrayContaining(["cfg", "channel", "to", "payloads", "bestEffort", "skipQueue", "silent"]),
+    );
     expect(callArgs).toHaveProperty("bestEffort", true);
     expect(callArgs).toHaveProperty("silent", true);
   });
 
   it("prefixes assistant echo payload with [echo]", () => {
-    const entry = makeEntry([{ channel: "discord", to: "999", echoUser: true, echoAssistant: true }]);
+    const entry = makeEntry([makeTarget({ channel: "discord", to: "999" })]);
     fireEchoDeliveries(
       {
         cfg: fakeCfg,
@@ -165,7 +206,7 @@ describe("fireEchoDeliveries", () => {
   });
 
   it("prefixes user echo payload with [via <channel>]", () => {
-    const entry = makeEntry([{ channel: "discord", to: "999", echoUser: true, echoAssistant: true }]);
+    const entry = makeEntry([makeTarget({ channel: "discord", to: "999" })]);
     fireEchoDeliveries(
       {
         cfg: fakeCfg,
@@ -183,8 +224,9 @@ describe("fireEchoDeliveries", () => {
     expect(payloads[0].text).toMatch(/\[via telegram\] hi there$/);
   });
 
-  it("preserves non-text payloads without prefix", () => {
-    const entry = makeEntry([{ channel: "discord", to: "999", echoUser: true, echoAssistant: true }]);
+  it("prefixes text payloads and preserves non-text payloads in mixed array", () => {
+    const entry = makeEntry([makeTarget({ channel: "discord", to: "999" })]);
+    const textPayload = { text: "hello" } as ReplyPayload;
     const mediaPayload = { media: "image.png" } as unknown as ReplyPayload;
     fireEchoDeliveries(
       {
@@ -195,18 +237,20 @@ describe("fireEchoDeliveries", () => {
         originTo: "123",
         role: "assistant",
       },
-      [mediaPayload],
+      [textPayload, mediaPayload],
     );
 
     const callArgs = mockDeliver.mock.calls[0][0] as Record<string, unknown>;
     const payloads = callArgs.payloads as Array<Record<string, unknown>>;
-    expect(payloads[0]).toEqual(mediaPayload);
+    expect(payloads).toHaveLength(2);
+    expect((payloads[0] as { text: string }).text).toMatch(/\[echo\] hello$/);
+    expect(payloads[1]).toEqual(mediaPayload);
   });
 
   it("delivers to each resolved target independently", () => {
     const entry = makeEntry([
-      { channel: "discord", to: "111", echoUser: true, echoAssistant: true },
-      { channel: "slack", to: "222", echoUser: true, echoAssistant: true },
+      makeTarget({ channel: "discord", to: "111" }),
+      makeTarget({ channel: "slack", to: "222" }),
     ]);
     fireEchoDeliveries(
       {
@@ -229,7 +273,7 @@ describe("fireEchoDeliveries", () => {
   });
 
   it("does not deliver when all targets are self-excluded", () => {
-    const entry = makeEntry([{ channel: "telegram", to: "123", echoUser: true, echoAssistant: true }]);
+    const entry = makeEntry([makeTarget({ channel: "telegram", to: "123" })]);
     fireEchoDeliveries(
       {
         cfg: fakeCfg,
@@ -237,6 +281,8 @@ describe("fireEchoDeliveries", () => {
         sessionEntry: entry,
         originChannel: "telegram",
         originTo: "123",
+        originAccountId: "bot1",
+        originThreadId: "456",
         role: "assistant",
       },
       [{ text: "hello" }],
@@ -261,7 +307,23 @@ describe("fireEchoDeliveries", () => {
 
     expect(mockDeliver).not.toHaveBeenCalled();
   });
-});
 
-// Type import for the non-text payload test
-import type { ReplyPayload } from "../../auto-reply/types.js";
+  it("swallows delivery errors without propagating", () => {
+    mockDeliver.mockRejectedValue(new Error("transport down"));
+    const entry = makeEntry([makeTarget({ channel: "discord", to: "999" })]);
+
+    expect(() => {
+      fireEchoDeliveries(
+        {
+          cfg: fakeCfg,
+          sessionKey: "agent:main",
+          sessionEntry: entry,
+          originChannel: "telegram",
+          originTo: "123",
+          role: "assistant",
+        },
+        [{ text: "hello" }],
+      );
+    }).not.toThrow();
+  });
+});

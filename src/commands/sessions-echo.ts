@@ -69,13 +69,19 @@ export async function sessionsEchoAddCommand(
     addedAt: Date.now(),
   } as SessionEchoTarget;
 
+  const MAX_ECHO_TARGETS = 16;
   let wasDuplicate = false;
+  let wasAtLimit = false;
   const result = await patchSessionEntry({
     storePath,
     sessionKey: opts.sessionKey,
     preserveActivity: true,
     update: (entry: SessionEntry) => {
       const existing = entry.echoTargets ?? [];
+      if (existing.length >= MAX_ECHO_TARGETS) {
+        wasAtLimit = true;
+        return null;
+      }
       const duplicate = existing.find(
         (t) =>
           t.channel === newTarget.channel &&
@@ -99,10 +105,14 @@ export async function sessionsEchoAddCommand(
 
   if (opts.json) {
     writeRuntimeJson(runtime, {
-      ok: true,
-      added: !wasDuplicate,
+      ok: !wasAtLimit,
+      added: !wasDuplicate && !wasAtLimit,
       echoTargets: result.echoTargets ?? [],
     });
+  } else if (wasAtLimit) {
+    runtime.error(`Echo target limit reached (max ${MAX_ECHO_TARGETS})`);
+    runtime.exit(1);
+    return;
   } else if (wasDuplicate) {
     runtime.log(
       `${theme.muted("Already exists:")} echo target ${opts.channel} -> ${opts.to}`,
