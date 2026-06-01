@@ -401,7 +401,7 @@ function emitSessionOperation(
 }
 
 function rejectWebchatSessionMutation(params: {
-  action: "patch" | "delete" | "compact" | "restore";
+  action: "patch" | "delete" | "compact" | "restore" | "echo";
   client: GatewayClient | null;
   isWebchatConnect: (params: GatewayClient["connect"] | null | undefined) => boolean;
   respond: RespondFn;
@@ -2275,9 +2275,10 @@ export const sessionsHandlers: GatewayRequestHandlers = {
         return;
       }
     }
-    const { cfg, target, storePath } = resolveGatewaySessionTargetFromKey(
+    const { target, storePath } = resolveGatewaySessionTargetFromKey(
       key,
       context.getRuntimeConfig(),
+      { agentId: p.agentId },
     );
 
     if (action === "list") {

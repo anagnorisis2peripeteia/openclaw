@@ -250,6 +250,7 @@ export const SessionsPluginPatchResultSchema = Type.Object(
 export const SessionsEchoParamsSchema = Type.Object(
   {
     key: NonEmptyString,
+    agentId: Type.Optional(NonEmptyString),
     action: Type.Optional(
       Type.Union([Type.Literal("add"), Type.Literal("remove"), Type.Literal("list")]),
     ),
@@ -266,6 +267,7 @@ export const SessionsEchoParamsSchema = Type.Object(
 
 export type SessionsEchoParams = {
   key: string;
+  agentId?: string;
   action?: "add" | "remove" | "list";
   channel?: string;
   to?: string;
