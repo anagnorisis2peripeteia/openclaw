@@ -2301,7 +2301,11 @@ export const sessionsHandlers: GatewayRequestHandlers = {
     }
 
     if (!p.channel || !p.to) {
-      respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "channel and to are required for add/remove"));
+      respond(
+        false,
+        undefined,
+        errorShape(ErrorCodes.INVALID_REQUEST, "channel and to are required for add/remove"),
+      );
       return;
     }
 
@@ -2327,7 +2331,7 @@ export const sessionsHandlers: GatewayRequestHandlers = {
           return entry;
         }
         const duplicate = existing.find(
-          (t: { channel: string; to: string; accountId?: string; threadId?: string }) =>
+          (t) =>
             t.channel === p.channel &&
             t.to === p.to &&
             (t.accountId ?? "") === (p.accountId ?? "") &&
@@ -2352,7 +2356,7 @@ export const sessionsHandlers: GatewayRequestHandlers = {
         ];
       } else if (action === "remove") {
         const filtered = existing.filter(
-          (t: { channel: string; to: string; accountId?: string; threadId?: string }) =>
+          (t) =>
             !(
               t.channel === p.channel &&
               t.to === p.to &&
@@ -2373,11 +2377,22 @@ export const sessionsHandlers: GatewayRequestHandlers = {
     });
 
     if (!updated) {
-      respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, `Session not found: ${key}`));
+      respond(
+        false,
+        undefined,
+        errorShape(ErrorCodes.INVALID_REQUEST, `Session not found: ${key}`),
+      );
       return;
     }
     if (atLimit) {
-      respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, `Echo target limit reached (max ${MAX_ECHO_TARGETS})`));
+      respond(
+        false,
+        undefined,
+        errorShape(
+          ErrorCodes.INVALID_REQUEST,
+          `Echo target limit reached (max ${MAX_ECHO_TARGETS})`,
+        ),
+      );
       return;
     }
     respond(true, { changed, echoTargets: updated.echoTargets ?? [] }, undefined);

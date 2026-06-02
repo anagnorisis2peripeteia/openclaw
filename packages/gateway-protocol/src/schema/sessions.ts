@@ -265,19 +265,6 @@ export const SessionsEchoParamsSchema = Type.Object(
   { additionalProperties: false },
 );
 
-export type SessionsEchoParams = {
-  key: string;
-  agentId?: string;
-  action?: "add" | "remove" | "list";
-  channel?: string;
-  to?: string;
-  accountId?: string;
-  threadId?: string;
-  label?: string;
-  echoUser?: boolean;
-  echoAssistant?: boolean;
-};
-
 export const SessionsResetParamsSchema = Type.Object(
   {
     key: NonEmptyString,

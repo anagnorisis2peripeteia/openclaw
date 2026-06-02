@@ -1,8 +1,8 @@
+import { theme } from "../../packages/terminal-core/src/theme.js";
 import { getRuntimeConfig } from "../config/config.js";
 import { patchSessionEntry } from "../config/sessions.js";
 import type { SessionEchoTarget, SessionEntry } from "../config/sessions/types.js";
 import { type RuntimeEnv, writeRuntimeJson } from "../runtime.js";
-import { theme } from "../terminal/theme.js";
 import { resolveSessionStoreTargetsOrExit } from "./session-store-targets.js";
 
 type EchoAddOpts = {
@@ -112,11 +112,8 @@ export async function sessionsEchoAddCommand(
   } else if (wasAtLimit) {
     runtime.error(`Echo target limit reached (max ${MAX_ECHO_TARGETS})`);
     runtime.exit(1);
-    return;
   } else if (wasDuplicate) {
-    runtime.log(
-      `${theme.muted("Already exists:")} echo target ${opts.channel} -> ${opts.to}`,
-    );
+    runtime.log(`${theme.muted("Already exists:")} echo target ${opts.channel} -> ${opts.to}`);
   } else {
     runtime.log(
       `${theme.success("Added")} echo target: ${opts.channel} -> ${opts.to}${opts.label ? ` (${opts.label})` : ""}`,
@@ -167,9 +164,7 @@ export async function sessionsEchoRemoveCommand(
       echoTargets: result.echoTargets ?? [],
     });
   } else if (wasNotFound) {
-    runtime.log(
-      `${theme.muted("Not found:")} echo target ${opts.channel} -> ${opts.to}`,
-    );
+    runtime.log(`${theme.muted("Not found:")} echo target ${opts.channel} -> ${opts.to}`);
   } else {
     runtime.log(`${theme.success("Removed")} echo target: ${opts.channel} -> ${opts.to}`);
   }
@@ -206,7 +201,7 @@ export async function sessionsEchoListCommand(
     return;
   }
 
-  runtime.log(`Echo targets for ${theme.bold(opts.sessionKey)}:\n`);
+  runtime.log(`Echo targets for ${theme.heading(opts.sessionKey)}:\n`);
   for (const target of targets) {
     const label = target.label ? ` (${target.label})` : "";
     const flags = [
