@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { resolveEchoTargets, fireEchoDeliveries } from "./echo.js";
+import type { ReplyPayload } from "../../auto-reply/types.js";
 import type { SessionEntry, SessionEchoTarget } from "../../config/sessions/types.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
-import type { ReplyPayload } from "../../auto-reply/types.js";
+import { resolveEchoTargets, fireEchoDeliveries } from "./echo.js";
 
 vi.mock("./deliver.js", () => ({
   deliverOutboundPayloadsInternal: vi.fn(() => Promise.resolve()),
@@ -34,8 +34,16 @@ describe("resolveEchoTargets", () => {
   const target = makeTarget();
 
   it("returns empty when entry has no echoTargets", () => {
-    expect(resolveEchoTargets(undefined, { originChannel: "telegram", originTo: "x", role: "user" })).toEqual([]);
-    expect(resolveEchoTargets({} as SessionEntry, { originChannel: "telegram", originTo: "x", role: "user" })).toEqual([]);
+    expect(
+      resolveEchoTargets(undefined, { originChannel: "telegram", originTo: "x", role: "user" }),
+    ).toEqual([]);
+    expect(
+      resolveEchoTargets({} as SessionEntry, {
+        originChannel: "telegram",
+        originTo: "x",
+        role: "user",
+      }),
+    ).toEqual([]);
   });
 
   it("excludes the origin target (self-echo prevention)", () => {
@@ -81,6 +89,28 @@ describe("resolveEchoTargets", () => {
     expect(result).toEqual([target]);
   });
 
+  it("self-excludes when target has no accountId but origin resolves one (unpinned target = wildcard)", () => {
+    // Regression: a `sessions echo add` target without an accountId must still
+    // self-exclude against a same channel+to+thread origin whose account got
+    // resolved to a default (Telegram inbounds resolve accountId to "default").
+    // The old `(!target.accountId && !originAccountId)` clause made undefined-vs-
+    // "default" a mismatch, so a thread echoed to itself.
+    const tgTarget = makeTarget({
+      channel: "telegram",
+      to: "999",
+      accountId: undefined,
+      threadId: "26237",
+    });
+    const result = resolveEchoTargets(makeEntry([tgTarget]), {
+      originChannel: "telegram",
+      originTo: "999",
+      originAccountId: "default",
+      originThreadId: "26237",
+      role: "user",
+    });
+    expect(result).toEqual([]);
+  });
+
   it("includes targets that differ by threadId", () => {
     const result = resolveEchoTargets(makeEntry([target]), {
       originChannel: "discord",
@@ -93,13 +123,16 @@ describe("resolveEchoTargets", () => {
   });
 
   it("matches threadId via string coercion (number vs string)", () => {
-    const result = resolveEchoTargets(makeEntry([makeTarget({ threadId: 456 as unknown as string })]), {
-      originChannel: "discord",
-      originTo: "123",
-      originAccountId: "bot1",
-      originThreadId: "456",
-      role: "assistant",
-    });
+    const result = resolveEchoTargets(
+      makeEntry([makeTarget({ threadId: 456 as unknown as string })]),
+      {
+        originChannel: "discord",
+        originTo: "123",
+        originAccountId: "bot1",
+        originThreadId: "456",
+        role: "assistant",
+      },
+    );
     expect(result).toEqual([]);
   });
 
@@ -135,13 +168,26 @@ describe("resolveEchoTargets", () => {
   });
 
   it("includes target when echoUser/echoAssistant are undefined (default-include)", () => {
-    const defaults = makeTarget({ echoUser: undefined, echoAssistant: undefined, channel: "slack", to: "C01" });
-    expect(resolveEchoTargets(makeEntry([defaults]), {
-      originChannel: "telegram", originTo: "999", role: "user",
-    })).toEqual([defaults]);
-    expect(resolveEchoTargets(makeEntry([defaults]), {
-      originChannel: "telegram", originTo: "999", role: "assistant",
-    })).toEqual([defaults]);
+    const defaults = makeTarget({
+      echoUser: undefined,
+      echoAssistant: undefined,
+      channel: "slack",
+      to: "C01",
+    });
+    expect(
+      resolveEchoTargets(makeEntry([defaults]), {
+        originChannel: "telegram",
+        originTo: "999",
+        role: "user",
+      }),
+    ).toEqual([defaults]);
+    expect(
+      resolveEchoTargets(makeEntry([defaults]), {
+        originChannel: "telegram",
+        originTo: "999",
+        role: "assistant",
+      }),
+    ).toEqual([defaults]);
   });
 
   it("returns multiple non-origin targets", () => {
@@ -155,7 +201,12 @@ describe("resolveEchoTargets", () => {
   });
 
   it("self-excludes when target.to is raw and origin uses telegram: prefix", () => {
-    const tgTarget = makeTarget({ channel: "telegram", to: "999", accountId: undefined, threadId: "26237" });
+    const tgTarget = makeTarget({
+      channel: "telegram",
+      to: "999",
+      accountId: undefined,
+      threadId: "26237",
+    });
     const result = resolveEchoTargets(makeEntry([tgTarget]), {
       originChannel: "telegram",
       originTo: "telegram:999",
@@ -166,7 +217,12 @@ describe("resolveEchoTargets", () => {
   });
 
   it("self-excludes when target.to uses telegram: prefix and origin is raw", () => {
-    const tgTarget = makeTarget({ channel: "telegram", to: "telegram:999", accountId: undefined, threadId: "26237" });
+    const tgTarget = makeTarget({
+      channel: "telegram",
+      to: "telegram:999",
+      accountId: undefined,
+      threadId: "26237",
+    });
     const result = resolveEchoTargets(makeEntry([tgTarget]), {
       originChannel: "telegram",
       originTo: "999",
@@ -177,7 +233,12 @@ describe("resolveEchoTargets", () => {
   });
 
   it("self-excludes with tg: prefix variant", () => {
-    const tgTarget = makeTarget({ channel: "telegram", to: "tg:999", accountId: undefined, threadId: undefined });
+    const tgTarget = makeTarget({
+      channel: "telegram",
+      to: "tg:999",
+      accountId: undefined,
+      threadId: undefined,
+    });
     const result = resolveEchoTargets(makeEntry([tgTarget]), {
       originChannel: "telegram",
       originTo: "999",
@@ -212,7 +273,15 @@ describe("fireEchoDeliveries", () => {
     expect(callArgs).not.toHaveProperty("session");
     expect(callArgs).not.toHaveProperty("mirror");
     expect(Object.keys(callArgs)).toEqual(
-      expect.arrayContaining(["cfg", "channel", "to", "payloads", "bestEffort", "skipQueue", "silent"]),
+      expect.arrayContaining([
+        "cfg",
+        "channel",
+        "to",
+        "payloads",
+        "bestEffort",
+        "skipQueue",
+        "silent",
+      ]),
     );
     expect(callArgs).toHaveProperty("bestEffort", true);
     expect(callArgs).toHaveProperty("silent", true);
@@ -297,9 +366,7 @@ describe("fireEchoDeliveries", () => {
     );
 
     expect(mockDeliver).toHaveBeenCalledTimes(2);
-    const channels = mockDeliver.mock.calls.map(
-      (c) => (c[0] as Record<string, unknown>).channel,
-    );
+    const channels = mockDeliver.mock.calls.map((c) => (c[0] as Record<string, unknown>).channel);
     expect(channels).toContain("discord");
     expect(channels).toContain("slack");
   });

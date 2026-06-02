@@ -8,7 +8,10 @@ import { deliverOutboundPayloadsInternal } from "./deliver.js";
 export function normalizeEchoTargetId(channel: string, to: string): string {
   const trimmed = to.trim();
   if (channel === "telegram") {
-    return trimmed.replace(/^(telegram|tg):/i, "").replace(/^group:/i, "").trim();
+    return trimmed
+      .replace(/^(telegram|tg):/i, "")
+      .replace(/^group:/i, "")
+      .trim();
   }
   return trimmed;
 }
@@ -50,9 +53,14 @@ export function resolveEchoTargets(
     const sameTo =
       normalizeEchoTargetId(target.channel, target.to) ===
       normalizeEchoTargetId(params.originChannel, params.originTo);
-    const sameAccount =
-      (!target.accountId && !params.originAccountId) ||
-      target.accountId === params.originAccountId;
+    // A target with no pinned accountId is a wildcard for self-exclusion: it
+    // would route back to the same conversation via the origin/default account,
+    // so a same channel+to+thread inbound is still "the same place" and must be
+    // excluded. Telegram inbounds resolve accountId to "default", so a target
+    // added without an account would otherwise never match origin and echo to
+    // itself. A target that *does* pin an account is a deliberate, distinct
+    // destination and only self-excludes against that same account.
+    const sameAccount = !target.accountId || target.accountId === params.originAccountId;
     const sameThread =
       (!target.threadId && !params.originThreadId) ||
       String(target.threadId) === String(params.originThreadId);
@@ -86,10 +94,7 @@ function prefixPayloads(payloads: ReplyPayload[], prefix: string): ReplyPayload[
 // (deliver.ts:1003). If that hook fires for echo deliveries, echo-hook.ts
 // re-enters fireEchoDeliveries -> infinite loop. Omitting session/mirror
 // keeps canEmitInternalHook=false and breaks the cycle.
-export function fireEchoDeliveries(
-  ctx: EchoDeliveryContext,
-  payloads: ReplyPayload[],
-): void {
+export function fireEchoDeliveries(ctx: EchoDeliveryContext, payloads: ReplyPayload[]): void {
   const targets = resolveEchoTargets(ctx.sessionEntry, {
     originChannel: ctx.originChannel,
     originTo: ctx.originTo,
