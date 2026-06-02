@@ -153,6 +153,38 @@ describe("resolveEchoTargets", () => {
     });
     expect(result).toHaveLength(2);
   });
+
+  it("self-excludes when target.to is raw and origin uses telegram: prefix", () => {
+    const tgTarget = makeTarget({ channel: "telegram", to: "999", accountId: undefined, threadId: "26237" });
+    const result = resolveEchoTargets(makeEntry([tgTarget]), {
+      originChannel: "telegram",
+      originTo: "telegram:999",
+      originThreadId: "26237",
+      role: "user",
+    });
+    expect(result).toEqual([]);
+  });
+
+  it("self-excludes when target.to uses telegram: prefix and origin is raw", () => {
+    const tgTarget = makeTarget({ channel: "telegram", to: "telegram:999", accountId: undefined, threadId: "26237" });
+    const result = resolveEchoTargets(makeEntry([tgTarget]), {
+      originChannel: "telegram",
+      originTo: "999",
+      originThreadId: "26237",
+      role: "user",
+    });
+    expect(result).toEqual([]);
+  });
+
+  it("self-excludes with tg: prefix variant", () => {
+    const tgTarget = makeTarget({ channel: "telegram", to: "tg:999", accountId: undefined, threadId: undefined });
+    const result = resolveEchoTargets(makeEntry([tgTarget]), {
+      originChannel: "telegram",
+      originTo: "999",
+      role: "assistant",
+    });
+    expect(result).toEqual([]);
+  });
 });
 
 describe("fireEchoDeliveries", () => {

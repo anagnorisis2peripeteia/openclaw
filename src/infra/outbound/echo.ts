@@ -5,6 +5,14 @@ import { createSubsystemLogger } from "../../logging/subsystem.js";
 import { formatErrorMessage } from "../errors.js";
 import { deliverOutboundPayloadsInternal } from "./deliver.js";
 
+export function normalizeEchoTargetId(channel: string, to: string): string {
+  const trimmed = to.trim();
+  if (channel === "telegram") {
+    return trimmed.replace(/^(telegram|tg):/i, "").replace(/^group:/i, "").trim();
+  }
+  return trimmed;
+}
+
 const log = createSubsystemLogger("outbound/echo");
 
 export type EchoDeliveryContext = {
@@ -39,7 +47,9 @@ export function resolveEchoTargets(
       return false;
     }
     const sameChannel = target.channel === params.originChannel;
-    const sameTo = target.to === params.originTo;
+    const sameTo =
+      normalizeEchoTargetId(target.channel, target.to) ===
+      normalizeEchoTargetId(params.originChannel, params.originTo);
     const sameAccount =
       (!target.accountId && !params.originAccountId) ||
       target.accountId === params.originAccountId;

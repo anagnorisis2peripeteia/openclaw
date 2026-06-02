@@ -2,6 +2,7 @@ import { theme } from "../../packages/terminal-core/src/theme.js";
 import { getRuntimeConfig } from "../config/config.js";
 import { patchSessionEntry } from "../config/sessions.js";
 import type { SessionEchoTarget, SessionEntry } from "../config/sessions/types.js";
+import { normalizeEchoTargetId } from "../infra/outbound/echo.js";
 import { type RuntimeEnv, writeRuntimeJson } from "../runtime.js";
 import { resolveSessionStoreTargetsOrExit } from "./session-store-targets.js";
 
@@ -85,7 +86,8 @@ export async function sessionsEchoAddCommand(
       const duplicate = existing.find(
         (t) =>
           t.channel === newTarget.channel &&
-          t.to === newTarget.to &&
+          normalizeEchoTargetId(t.channel, t.to) ===
+            normalizeEchoTargetId(newTarget.channel, newTarget.to) &&
           (t.accountId ?? "") === (newTarget.accountId ?? "") &&
           String(t.threadId ?? "") === String(newTarget.threadId ?? ""),
       );
@@ -109,6 +111,9 @@ export async function sessionsEchoAddCommand(
       added: !wasDuplicate && !wasAtLimit,
       echoTargets: result.echoTargets ?? [],
     });
+    if (wasAtLimit) {
+      runtime.exit(1);
+    }
   } else if (wasAtLimit) {
     runtime.error(`Echo target limit reached (max ${MAX_ECHO_TARGETS})`);
     runtime.exit(1);
@@ -138,7 +143,8 @@ export async function sessionsEchoRemoveCommand(
         (t) =>
           !(
             t.channel === opts.channel &&
-            t.to === opts.to &&
+            normalizeEchoTargetId(t.channel, t.to) ===
+              normalizeEchoTargetId(opts.channel, opts.to) &&
             (t.accountId ?? "") === (opts.accountId ?? "") &&
             String(t.threadId ?? "") === String(opts.threadId ?? "")
           ),

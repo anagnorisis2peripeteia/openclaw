@@ -71,6 +71,7 @@ import {
   measureDiagnosticsTimelineSpanSync,
 } from "../../infra/diagnostics-timeline.js";
 import { formatErrorMessage } from "../../infra/errors.js";
+import { normalizeEchoTargetId } from "../../infra/outbound/echo.js";
 import { patchPluginSessionExtension } from "../../plugins/host-hook-state.js";
 import { isPluginJsonValue } from "../../plugins/host-hooks.js";
 import {
@@ -2333,7 +2334,8 @@ export const sessionsHandlers: GatewayRequestHandlers = {
         const duplicate = existing.find(
           (t) =>
             t.channel === p.channel &&
-            t.to === p.to &&
+            normalizeEchoTargetId(t.channel, t.to) ===
+              normalizeEchoTargetId(p.channel!, p.to!) &&
             (t.accountId ?? "") === (p.accountId ?? "") &&
             String(t.threadId ?? "") === String(p.threadId ?? ""),
         );
@@ -2359,7 +2361,8 @@ export const sessionsHandlers: GatewayRequestHandlers = {
           (t) =>
             !(
               t.channel === p.channel &&
-              t.to === p.to &&
+              normalizeEchoTargetId(t.channel, t.to) ===
+                normalizeEchoTargetId(p.channel!, p.to!) &&
               (t.accountId ?? "") === (p.accountId ?? "") &&
               String(t.threadId ?? "") === String(p.threadId ?? "")
             ),
