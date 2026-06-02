@@ -55,9 +55,9 @@ import {
 } from "../../infra/diagnostics-timeline.js";
 import { formatErrorMessage, formatUncaughtError } from "../../infra/errors.js";
 import { jsonUtf8Bytes } from "../../infra/json-utf8-bytes.js";
+import { fireEchoDeliveries } from "../../infra/outbound/echo.js";
 import { normalizeReplyPayloadsForDelivery } from "../../infra/outbound/payloads.js";
 import { getSessionBindingService } from "../../infra/outbound/session-binding-service.js";
-import { fireEchoDeliveries } from "../../infra/outbound/echo.js";
 import { logLargePayload } from "../../logging/diagnostic-payload.js";
 import {
   appendLocalMediaParentRoots,
@@ -3067,6 +3067,24 @@ export const chatHandlers: GatewayRequestHandlers = {
         return;
       }
     }
+    if (rawMessage) {
+      const userEchoEntry = entry ?? loadSessionEntry(sessionKey, sessionLoadOptions).entry;
+      if (userEchoEntry?.echoTargets?.length) {
+        fireEchoDeliveries(
+          {
+            cfg,
+            sessionKey,
+            sessionEntry: userEchoEntry,
+            originChannel: p.originatingChannel ?? "webchat",
+            originTo: p.originatingTo ?? "",
+            originAccountId: p.originatingAccountId,
+            originThreadId: p.originatingThreadId,
+            role: "user",
+          },
+          [{ text: rawMessage }],
+        );
+      }
+    }
     const explicitOriginTargetsPlugin = explicitOriginTargetsPluginBinding(
       explicitOriginResult.value,
     );
@@ -3799,7 +3817,8 @@ export const chatHandlers: GatewayRequestHandlers = {
                     message,
                   });
                   if (displayReply) {
-                    const echoEntry = entry ?? loadSessionEntry(sessionKey, sessionLoadOptions).entry;
+                    const echoEntry =
+                      entry ?? loadSessionEntry(sessionKey, sessionLoadOptions).entry;
                     if (echoEntry?.echoTargets?.length) {
                       fireEchoDeliveries(
                         {
@@ -4124,7 +4143,8 @@ export const chatHandlers: GatewayRequestHandlers = {
                     });
                     broadcastedSourceReplyFinal = true;
                     if (sourceReplyText) {
-                      const echoEntry = entry ?? loadSessionEntry(sessionKey, sessionLoadOptions).entry;
+                      const echoEntry =
+                        entry ?? loadSessionEntry(sessionKey, sessionLoadOptions).entry;
                       if (echoEntry?.echoTargets?.length) {
                         fireEchoDeliveries(
                           {
