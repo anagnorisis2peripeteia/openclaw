@@ -257,7 +257,9 @@ export const SessionsEchoParamsSchema = Type.Object(
     channel: Type.Optional(NonEmptyString),
     to: Type.Optional(NonEmptyString),
     accountId: Type.Optional(NonEmptyString),
-    threadId: Type.Optional(NonEmptyString),
+    // Telegram forum thread IDs arrive as numbers; SessionEchoTarget.threadId is
+    // string | number, so accept both here instead of rejecting numeric IDs.
+    threadId: Type.Optional(Type.Union([NonEmptyString, Type.Number()])),
     label: Type.Optional(NonEmptyString),
     echoUser: Type.Optional(Type.Boolean()),
     echoAssistant: Type.Optional(Type.Boolean()),
