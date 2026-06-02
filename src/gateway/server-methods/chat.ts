@@ -3067,24 +3067,6 @@ export const chatHandlers: GatewayRequestHandlers = {
         return;
       }
     }
-    if (rawMessage) {
-      const userEchoEntry = entry ?? loadSessionEntry(sessionKey, sessionLoadOptions).entry;
-      if (userEchoEntry?.echoTargets?.length) {
-        fireEchoDeliveries(
-          {
-            cfg,
-            sessionKey,
-            sessionEntry: userEchoEntry,
-            originChannel: p.originatingChannel ?? "webchat",
-            originTo: p.originatingTo ?? "",
-            originAccountId: p.originatingAccountId,
-            originThreadId: p.originatingThreadId,
-            role: "user",
-          },
-          [{ text: rawMessage }],
-        );
-      }
-    }
     const explicitOriginTargetsPlugin = explicitOriginTargetsPluginBinding(
       explicitOriginResult.value,
     );
@@ -3203,6 +3185,28 @@ export const chatHandlers: GatewayRequestHandlers = {
         status: "started" as const,
       };
       respond(true, ackPayload, undefined, { runId: clientRunId });
+      // User-message echo fires only once the turn is accepted for dispatch
+      // (attachments staged, abort controller registered, run added, ack sent),
+      // mirroring the assistant-echo's post-acceptance placement. Firing it
+      // earlier would leak rejected input if a pre-acceptance path errored out.
+      if (rawMessage) {
+        const userEchoEntry = entry ?? loadSessionEntry(sessionKey, sessionLoadOptions).entry;
+        if (userEchoEntry?.echoTargets?.length) {
+          fireEchoDeliveries(
+            {
+              cfg,
+              sessionKey,
+              sessionEntry: userEchoEntry,
+              originChannel: p.originatingChannel ?? "webchat",
+              originTo: p.originatingTo ?? "",
+              originAccountId: p.originatingAccountId,
+              originThreadId: p.originatingThreadId,
+              role: "user",
+            },
+            [{ text: rawMessage }],
+          );
+        }
+      }
       const persistedImagesPromise = persistChatSendImages({
         images: parsedImages,
         imageOrder,
