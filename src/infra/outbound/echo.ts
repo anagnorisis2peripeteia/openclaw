@@ -94,7 +94,11 @@ function prefixPayloads(payloads: ReplyPayload[], prefix: string): ReplyPayload[
 // (deliver.ts:1003). If that hook fires for echo deliveries, echo-hook.ts
 // re-enters fireEchoDeliveries -> infinite loop. Omitting session/mirror
 // keeps canEmitInternalHook=false and breaks the cycle.
-export function fireEchoDeliveries(ctx: EchoDeliveryContext, payloads: ReplyPayload[]): void {
+export function fireEchoDeliveries(
+  ctx: EchoDeliveryContext,
+  payloads: ReplyPayload[],
+  options?: { prefixed?: boolean },
+): void {
   const targets = resolveEchoTargets(ctx.sessionEntry, {
     originChannel: ctx.originChannel,
     originTo: ctx.originTo,
@@ -107,8 +111,11 @@ export function fireEchoDeliveries(ctx: EchoDeliveryContext, payloads: ReplyPayl
     return;
   }
 
-  const prefix = formatEchoPrefix(ctx);
-  const echoPayloads = prefixPayloads(payloads, prefix);
+  // The prompt echo keeps its "[via <channel>]" marker so it reads as a mirror of input
+  // typed elsewhere. The assistant response is fanned out un-prefixed so it renders as a
+  // native reply on each pinned channel (prefixed: false).
+  const echoPayloads =
+    options?.prefixed === false ? payloads : prefixPayloads(payloads, formatEchoPrefix(ctx));
 
   for (const target of targets) {
     deliverOutboundPayloadsInternal({

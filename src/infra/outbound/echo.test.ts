@@ -287,7 +287,31 @@ describe("fireEchoDeliveries", () => {
     expect(callArgs).toHaveProperty("silent", true);
   });
 
-  it("prefixes assistant echo payload with [echo]", () => {
+  it("delivers assistant echo natively (no prefix) when prefixed:false", () => {
+    // Production path: handleMessageSent passes { prefixed: false } so the response
+    // mirrors to pinned channels as a native reply, not a marked "[echo]" message.
+    const entry = makeEntry([makeTarget({ channel: "discord", to: "999" })]);
+    fireEchoDeliveries(
+      {
+        cfg: fakeCfg,
+        sessionKey: "agent:main",
+        sessionEntry: entry,
+        originChannel: "telegram",
+        originTo: "123",
+        role: "assistant",
+      },
+      [{ text: "hello" }],
+      { prefixed: false },
+    );
+
+    const callArgs = mockDeliver.mock.calls[0][0] as Record<string, unknown>;
+    const payloads = callArgs.payloads as Array<{ text: string }>;
+    expect(payloads[0].text).toBe("hello");
+  });
+
+  it("still prefixes assistant echo with [echo] when prefixed is not disabled", () => {
+    // Default API behavior (no options) keeps the legacy "[echo]" marker; only the
+    // message:sent hook opts out via { prefixed: false }.
     const entry = makeEntry([makeTarget({ channel: "discord", to: "999" })]);
     fireEchoDeliveries(
       {

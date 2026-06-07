@@ -1,13 +1,10 @@
-import type { SessionEntry } from "../../config/sessions/types.js";
-import { getRuntimeConfig } from "../../config/config.js";
-import { readSessionEntry } from "../../config/sessions/store-load.js";
-import { resolveStorePath } from "../../config/sessions/paths.js";
-import { parseAgentSessionKey } from "../../routing/session-key.js";
 import { resolveDefaultAgentId } from "../../agents/agent-scope.js";
-import {
-  registerInternalHook,
-  type InternalHookEvent,
-} from "../../hooks/internal-hooks.js";
+import { getRuntimeConfig } from "../../config/config.js";
+import { resolveStorePath } from "../../config/sessions/paths.js";
+import { readSessionEntry } from "../../config/sessions/store-load.js";
+import type { SessionEntry } from "../../config/sessions/types.js";
+import { registerInternalHook, type InternalHookEvent } from "../../hooks/internal-hooks.js";
+import { parseAgentSessionKey } from "../../routing/session-key.js";
 import { fireEchoDeliveries } from "./echo.js";
 
 let registered = false;
@@ -21,7 +18,9 @@ export function registerEchoHook(): void {
   registerInternalHook("message:received", handleMessageReceived);
 }
 
-function resolveSessionEchoEntry(sessionKey: string): { cfg: ReturnType<typeof getRuntimeConfig>; entry: SessionEntry } | undefined {
+function resolveSessionEchoEntry(
+  sessionKey: string,
+): { cfg: ReturnType<typeof getRuntimeConfig>; entry: SessionEntry } | undefined {
   let cfg;
   try {
     cfg = getRuntimeConfig();
@@ -31,7 +30,8 @@ function resolveSessionEchoEntry(sessionKey: string): { cfg: ReturnType<typeof g
   const parsed = parseAgentSessionKey(sessionKey);
   // For selected-global sessions ("global" key without embedded agent),
   // resolve the default agent so we read the correct agent-scoped store.
-  const agentId = parsed?.agentId ?? (sessionKey === "global" ? resolveDefaultAgentId(cfg) : undefined);
+  const agentId =
+    parsed?.agentId ?? (sessionKey === "global" ? resolveDefaultAgentId(cfg) : undefined);
   const storePath = resolveStorePath(cfg.session?.store, { agentId });
   try {
     const entry = readSessionEntry(storePath, sessionKey) as SessionEntry | undefined;
@@ -80,6 +80,10 @@ async function handleMessageSent(event: InternalHookEvent): Promise<void> {
       role: "assistant",
     },
     [{ text: ctx.content }],
+    // Native-final delivery: the response mirrors to pinned channels as a normal,
+    // natively-formatted reply (no "[echo]" prefix). Only the user prompt is marked
+    // as an echo. (True per-token streaming on echo channels is the B-full follow-up.)
+    { prefixed: false },
   );
 }
 
