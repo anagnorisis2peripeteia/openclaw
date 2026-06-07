@@ -55,6 +55,7 @@ import {
 } from "../../infra/diagnostics-timeline.js";
 import { formatErrorMessage, formatUncaughtError } from "../../infra/errors.js";
 import { jsonUtf8Bytes } from "../../infra/json-utf8-bytes.js";
+import { isStreamingEchoTargetHandled } from "../../infra/outbound/echo-streaming.js";
 import { fireEchoDeliveries } from "../../infra/outbound/echo.js";
 import { normalizeReplyPayloadsForDelivery } from "../../infra/outbound/payloads.js";
 import { getSessionBindingService } from "../../infra/outbound/session-binding-service.js";
@@ -3836,6 +3837,14 @@ export const chatHandlers: GatewayRequestHandlers = {
                           role: "assistant",
                         },
                         [{ text: displayReply }],
+                        // Match the message:sent echo path (echo-hook.ts): the response mirrors
+                        // natively (no "[echo]" prefix), and targets already rendered live by a
+                        // streaming renderer are skipped so they don't get a duplicate final.
+                        {
+                          prefixed: false,
+                          filterTargets: (target) =>
+                            !isStreamingEchoTargetHandled(sessionKey, target),
+                        },
                       );
                     }
                   }

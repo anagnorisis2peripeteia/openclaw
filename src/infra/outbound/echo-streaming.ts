@@ -50,7 +50,24 @@ const state: EchoStreamingState = {
   handledBySession: new Map(),
 };
 
+/**
+ * Register the streaming-echo renderer factory for a channel.
+ *
+ * Ownership contract: a channel plugin registers the factory for ITS OWN channel id,
+ * exactly once (call from the channel's startup; idempotent re-registration with the
+ * same factory is fine). Registration is FIRST-WINS — a different factory cannot
+ * overwrite an already-registered channel — so a later/foreign caller cannot hijack
+ * another channel's echo rendering. Subsequent conflicting registrations are ignored
+ * with a warning rather than silently taking over.
+ */
 export function registerEchoRendererFactory(channel: string, factory: EchoRendererFactory): void {
+  const existing = state.factories.get(channel);
+  if (existing && existing !== factory) {
+    log.warn(
+      `echo renderer factory for "${channel}" is already registered; ignoring conflicting re-registration`,
+    );
+    return;
+  }
   state.factories.set(channel, factory);
 }
 
