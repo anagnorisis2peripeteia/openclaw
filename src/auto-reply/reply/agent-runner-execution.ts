@@ -55,6 +55,10 @@ import { logVerbose } from "../../globals.js";
 import { emitAgentEvent, onAgentEvent, registerAgentRunContext } from "../../infra/agent-events.js";
 import { isDiagnosticsEnabled } from "../../infra/diagnostic-events.js";
 import { formatErrorMessage } from "../../infra/errors.js";
+import {
+  launchStreamingEchoFanout,
+  type StreamingEchoFanoutHandle,
+} from "../../infra/outbound/echo-streaming.js";
 import { logSessionTurnCreated } from "../../logging/diagnostic.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
 import { CommandLaneClearedError, GatewayDrainingError } from "../../process/command-queue.js";
@@ -1590,6 +1594,43 @@ export async function runAgentTurnWithFallback(params: {
       isControlUiVisible: shouldSurfaceToControlUi,
     });
   }
+  // B-full native streaming echo: launch one live renderer per streaming-enabled
+  // echo target, fed by THIS run's agent-event stream (one agent run, N native
+  // renders). Must run before the model emits — the bus has no replay buffer, so
+  // each renderer subscribes synchronously here. On normal completion the renderers
+  // self-finalize from the run's lifecycle event; on abort we discard them.
+  let streamingEchoFanout: StreamingEchoFanoutHandle | undefined;
+  const echoEntryForStreaming = params.sessionKey ? params.getActiveSessionEntry() : undefined;
+  if (echoEntryForStreaming?.echoTargets?.length) {
+    try {
+      streamingEchoFanout = await launchStreamingEchoFanout({
+        originRunId: runId,
+        cfg: runtimeConfig,
+        sessionKey: params.sessionKey,
+        sessionEntry: echoEntryForStreaming,
+        originChannel:
+          echoEntryForStreaming.lastChannel ??
+          echoEntryForStreaming.channel ??
+          params.sessionCtx.Provider ??
+          "",
+        originTo: echoEntryForStreaming.lastTo ?? "",
+        originAccountId: echoEntryForStreaming.lastAccountId,
+        originThreadId: echoEntryForStreaming.lastThreadId,
+      });
+    } catch (err) {
+      logVerbose(`streaming echo fan-out launch failed (non-fatal): ${String(err)}`);
+    }
+    const echoAbortSignal = params.replyOperation?.abortSignal ?? params.opts?.abortSignal;
+    if (streamingEchoFanout && echoAbortSignal) {
+      echoAbortSignal.addEventListener(
+        "abort",
+        () => {
+          void streamingEchoFanout?.dispose();
+        },
+        { once: true },
+      );
+    }
+  }
   let runResult: Awaited<ReturnType<typeof runEmbeddedAgent>>;
   let fallbackProvider = params.followupRun.run.provider;
   let fallbackModel = params.followupRun.run.model;
@@ -2040,10 +2081,16 @@ export async function runAgentTurnWithFallback(params: {
               const cliThinkingBridge = (() => {
                 let delivery = Promise.resolve<void>(undefined);
                 const rawUnsubscribe = onAgentEvent((evt) => {
-                  if (evt.runId !== runId || evt.stream !== "thinking") {return;}
-                  if (params.followupRun.run.silentExpected) {return;}
+                  if (evt.runId !== runId || evt.stream !== "thinking") {
+                    return;
+                  }
+                  if (params.followupRun.run.silentExpected) {
+                    return;
+                  }
                   const text = typeof evt.data?.text === "string" ? evt.data.text : undefined;
-                  if (!text) {return;}
+                  if (!text) {
+                    return;
+                  }
                   cliThinkingArrived = true;
                   delivery = delivery
                     .then(() => params.opts?.onReasoningStream?.({ text }) ?? Promise.resolve())
@@ -2057,146 +2104,148 @@ export async function runAgentTurnWithFallback(params: {
                 };
               })();
               try {
-              const result = await agentTurnTiming.measure("cli_run", () =>
-                runCliAgentWithLifecycle({
-                  runId,
-                  provider: cliExecutionProvider,
-                  onAgentRunStart: notifyAgentRunStart,
-                  suppressAssistantBridge: params.followupRun.run.silentExpected,
-                  onAssistantText: async (text) => {
-                    // Dedup: when the reasoning bridge gate routes this same
-                    // text into the reasoning lane (via assistant-text-as-reasoning
-                    // fallback in agent-runner-cli-dispatch.ts), suppress the
-                    // answer-lane delivery to avoid the user seeing duplicate
-                    // text. Only skip when thinking hasn't arrived yet — if
-                    // cliThinkingBridge above already started feeding the
-                    // reasoning lane via thinking_delta events, the answer-lane
-                    // delivery is still the only place this text lands.
-                    if (
-                      !cliThinkingArrived &&
-                      shouldBridgeCliAssistantTextToReasoning(cliExecutionProvider)
-                    ) {
-                      return;
-                    }
-                    const textForTyping = await handlePartialForTyping({ text } as ReplyPayload);
-                    if (textForTyping === undefined || !params.opts?.onPartialReply) {
-                      return;
-                    }
-                    await params.opts.onPartialReply({ text: textForTyping });
-                  },
-                  onReasoningText: async (text) => {
-                    // Skip when the cli-interactive MITM proxy is already feeding
-                    // thinking_delta into the reasoning lane (cliThinkingBridge
-                    // above) — otherwise we'd double-deliver.
-                    if (cliThinkingArrived) {return;}
-                    await params.opts?.onReasoningStream?.({ text });
-                  },
-                  onToolEvent: async ({ name, phase, args }) => {
-                    await Promise.all([
-                      params.typingSignals.signalToolStart(),
-                      params.opts?.onToolStart?.({
-                        name,
-                        phase,
-                        args,
-                        detailMode: params.toolProgressDetail,
-                      }),
-                    ]);
-                  },
-                  onErrorBeforeLifecycle: async () => {
-                    if (!rollbackFallbackCandidateSelection) {
-                      return;
-                    }
-                    try {
-                      await rollbackFallbackCandidateSelection();
-                      clearPendingFallbackRollback(rollbackFallbackCandidateSelection);
-                    } catch (rollbackError) {
-                      logVerbose(
-                        `failed to roll back fallback candidate selection (non-fatal): ${String(rollbackError)}`,
-                      );
-                    }
-                  },
-                  transformResult:
-                    params.followupRun.currentInboundEventKind === "room_event"
-                      ? (result) =>
-                          keepCliSessionBindingOnlyWhenReused({
-                            result,
-                            existingSessionId: cliSessionBinding?.sessionId,
-                            onDroppedReplacement: () => {
-                              droppedCliSessionReplacement = true;
-                            },
-                          })
-                      : undefined,
-                  runParams: {
-                    sessionId: params.followupRun.run.sessionId,
-                    sessionKey: params.sessionKey,
-                    agentId: params.followupRun.run.agentId,
-                    trigger: params.isHeartbeat ? "heartbeat" : "user",
-                    sessionFile: params.followupRun.run.sessionFile,
-                    workspaceDir: params.followupRun.run.workspaceDir,
-                    cwd: params.followupRun.run.cwd,
-                    config: runtimeConfig,
-                    prompt: params.commandBody,
-                    transcriptPrompt: params.transcriptCommandBody,
-                    suppressNextUserMessagePersistence: suppressQueuedUserPersistenceForCandidate,
-                    userTurnTranscriptRecorder,
-                    onUserMessagePersisted: notifyUserMessagePersisted,
-                    currentInboundEventKind: params.followupRun.currentInboundEventKind,
-                    currentInboundContext: params.followupRun.currentInboundContext,
-                    inputProvenance: params.followupRun.run.inputProvenance,
-                    provider: cliExecutionProvider,
-                    model,
-                    thinkLevel: params.followupRun.run.thinkLevel,
-                    timeoutMs: params.followupRun.run.timeoutMs,
+                const result = await agentTurnTiming.measure("cli_run", () =>
+                  runCliAgentWithLifecycle({
                     runId,
-                    lane: runLane,
-                    extraSystemPrompt: params.followupRun.run.extraSystemPrompt,
-                    sourceReplyDeliveryMode: params.followupRun.run.sourceReplyDeliveryMode,
-                    silentReplyPromptMode: params.followupRun.run.silentReplyPromptMode,
-                    extraSystemPromptStatic: params.followupRun.run.extraSystemPromptStatic,
-                    ownerNumbers: params.followupRun.run.ownerNumbers,
-                    cliSessionId: cliSessionBinding?.sessionId,
-                    cliSessionBinding,
-                    authProfileId: authProfile.authProfileId,
-                    bootstrapPromptWarningSignaturesSeen,
-                    bootstrapPromptWarningSignature:
-                      bootstrapPromptWarningSignaturesSeen[
-                        bootstrapPromptWarningSignaturesSeen.length - 1
-                      ],
-                    images: currentTurnImages.images,
-                    imageOrder: currentTurnImages.imageOrder,
-                    skillsSnapshot: params.followupRun.run.skillsSnapshot,
-                    messageChannel: params.followupRun.originatingChannel ?? undefined,
-                    messageProvider: hookMessageProvider,
-                    currentChannelId:
-                      params.followupRun.originatingTo ??
-                      params.sessionCtx.OriginatingTo ??
-                      params.sessionCtx.To,
-                    currentThreadTs:
-                      cliCurrentThreadId != null ? String(cliCurrentThreadId) : undefined,
-                    currentMessageId: cliCurrentMessageId,
-                    agentAccountId: params.followupRun.run.agentAccountId,
-                    senderIsOwner: params.followupRun.run.senderIsOwner,
-                    disableTools: params.opts?.disableTools,
-                    abortSignal: runAbortSignal,
-                    replyOperation: params.replyOperation,
-                  },
-                }),
-              );
-              if (droppedCliSessionReplacement) {
-                await clearDroppedCliSessionBinding({
-                  provider: cliExecutionProvider,
-                  sessionKey: params.sessionKey,
-                  sessionStore: params.activeSessionStore,
-                  storePath: params.storePath,
-                  activeSessionEntry: params.getActiveSessionEntry(),
-                });
-              }
-              cliThinkingBridge.unsubscribe();
-              await cliThinkingBridge.drain();
-              bootstrapPromptWarningSignaturesSeen = resolveBootstrapWarningSignaturesSeen(
-                result.meta?.systemPromptReport,
-              );
-              return result;
+                    provider: cliExecutionProvider,
+                    onAgentRunStart: notifyAgentRunStart,
+                    suppressAssistantBridge: params.followupRun.run.silentExpected,
+                    onAssistantText: async (text) => {
+                      // Dedup: when the reasoning bridge gate routes this same
+                      // text into the reasoning lane (via assistant-text-as-reasoning
+                      // fallback in agent-runner-cli-dispatch.ts), suppress the
+                      // answer-lane delivery to avoid the user seeing duplicate
+                      // text. Only skip when thinking hasn't arrived yet — if
+                      // cliThinkingBridge above already started feeding the
+                      // reasoning lane via thinking_delta events, the answer-lane
+                      // delivery is still the only place this text lands.
+                      if (
+                        !cliThinkingArrived &&
+                        shouldBridgeCliAssistantTextToReasoning(cliExecutionProvider)
+                      ) {
+                        return;
+                      }
+                      const textForTyping = await handlePartialForTyping({ text } as ReplyPayload);
+                      if (textForTyping === undefined || !params.opts?.onPartialReply) {
+                        return;
+                      }
+                      await params.opts.onPartialReply({ text: textForTyping });
+                    },
+                    onReasoningText: async (text) => {
+                      // Skip when the cli-interactive MITM proxy is already feeding
+                      // thinking_delta into the reasoning lane (cliThinkingBridge
+                      // above) — otherwise we'd double-deliver.
+                      if (cliThinkingArrived) {
+                        return;
+                      }
+                      await params.opts?.onReasoningStream?.({ text });
+                    },
+                    onToolEvent: async ({ name, phase, args }) => {
+                      await Promise.all([
+                        params.typingSignals.signalToolStart(),
+                        params.opts?.onToolStart?.({
+                          name,
+                          phase,
+                          args,
+                          detailMode: params.toolProgressDetail,
+                        }),
+                      ]);
+                    },
+                    onErrorBeforeLifecycle: async () => {
+                      if (!rollbackFallbackCandidateSelection) {
+                        return;
+                      }
+                      try {
+                        await rollbackFallbackCandidateSelection();
+                        clearPendingFallbackRollback(rollbackFallbackCandidateSelection);
+                      } catch (rollbackError) {
+                        logVerbose(
+                          `failed to roll back fallback candidate selection (non-fatal): ${String(rollbackError)}`,
+                        );
+                      }
+                    },
+                    transformResult:
+                      params.followupRun.currentInboundEventKind === "room_event"
+                        ? (result) =>
+                            keepCliSessionBindingOnlyWhenReused({
+                              result,
+                              existingSessionId: cliSessionBinding?.sessionId,
+                              onDroppedReplacement: () => {
+                                droppedCliSessionReplacement = true;
+                              },
+                            })
+                        : undefined,
+                    runParams: {
+                      sessionId: params.followupRun.run.sessionId,
+                      sessionKey: params.sessionKey,
+                      agentId: params.followupRun.run.agentId,
+                      trigger: params.isHeartbeat ? "heartbeat" : "user",
+                      sessionFile: params.followupRun.run.sessionFile,
+                      workspaceDir: params.followupRun.run.workspaceDir,
+                      cwd: params.followupRun.run.cwd,
+                      config: runtimeConfig,
+                      prompt: params.commandBody,
+                      transcriptPrompt: params.transcriptCommandBody,
+                      suppressNextUserMessagePersistence: suppressQueuedUserPersistenceForCandidate,
+                      userTurnTranscriptRecorder,
+                      onUserMessagePersisted: notifyUserMessagePersisted,
+                      currentInboundEventKind: params.followupRun.currentInboundEventKind,
+                      currentInboundContext: params.followupRun.currentInboundContext,
+                      inputProvenance: params.followupRun.run.inputProvenance,
+                      provider: cliExecutionProvider,
+                      model,
+                      thinkLevel: params.followupRun.run.thinkLevel,
+                      timeoutMs: params.followupRun.run.timeoutMs,
+                      runId,
+                      lane: runLane,
+                      extraSystemPrompt: params.followupRun.run.extraSystemPrompt,
+                      sourceReplyDeliveryMode: params.followupRun.run.sourceReplyDeliveryMode,
+                      silentReplyPromptMode: params.followupRun.run.silentReplyPromptMode,
+                      extraSystemPromptStatic: params.followupRun.run.extraSystemPromptStatic,
+                      ownerNumbers: params.followupRun.run.ownerNumbers,
+                      cliSessionId: cliSessionBinding?.sessionId,
+                      cliSessionBinding,
+                      authProfileId: authProfile.authProfileId,
+                      bootstrapPromptWarningSignaturesSeen,
+                      bootstrapPromptWarningSignature:
+                        bootstrapPromptWarningSignaturesSeen[
+                          bootstrapPromptWarningSignaturesSeen.length - 1
+                        ],
+                      images: currentTurnImages.images,
+                      imageOrder: currentTurnImages.imageOrder,
+                      skillsSnapshot: params.followupRun.run.skillsSnapshot,
+                      messageChannel: params.followupRun.originatingChannel ?? undefined,
+                      messageProvider: hookMessageProvider,
+                      currentChannelId:
+                        params.followupRun.originatingTo ??
+                        params.sessionCtx.OriginatingTo ??
+                        params.sessionCtx.To,
+                      currentThreadTs:
+                        cliCurrentThreadId != null ? String(cliCurrentThreadId) : undefined,
+                      currentMessageId: cliCurrentMessageId,
+                      agentAccountId: params.followupRun.run.agentAccountId,
+                      senderIsOwner: params.followupRun.run.senderIsOwner,
+                      disableTools: params.opts?.disableTools,
+                      abortSignal: runAbortSignal,
+                      replyOperation: params.replyOperation,
+                    },
+                  }),
+                );
+                if (droppedCliSessionReplacement) {
+                  await clearDroppedCliSessionBinding({
+                    provider: cliExecutionProvider,
+                    sessionKey: params.sessionKey,
+                    sessionStore: params.activeSessionStore,
+                    storePath: params.storePath,
+                    activeSessionEntry: params.getActiveSessionEntry(),
+                  });
+                }
+                cliThinkingBridge.unsubscribe();
+                await cliThinkingBridge.drain();
+                bootstrapPromptWarningSignaturesSeen = resolveBootstrapWarningSignaturesSeen(
+                  result.meta?.systemPromptReport,
+                );
+                return result;
               } finally {
                 cliThinkingBridge.unsubscribe();
               }

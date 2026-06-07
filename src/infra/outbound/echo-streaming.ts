@@ -1,0 +1,206 @@
+import type { GetReplyOptions } from "../../auto-reply/get-reply-options.types.js";
+import type { ReplyPayload } from "../../auto-reply/reply-payload.js";
+import type { MsgContext } from "../../auto-reply/templating.js";
+import type { SessionEchoTarget, SessionEntry } from "../../config/sessions/types.js";
+import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import { createSubsystemLogger } from "../../logging/subsystem.js";
+import { formatErrorMessage } from "../errors.js";
+import { createMirrorReplyResolver } from "./echo-mirror-resolver.js";
+import { normalizeEchoTargetId, resolveEchoTargets } from "./echo.js";
+
+const log = createSubsystemLogger("outbound/echo-streaming");
+
+/**
+ * B-full native streaming echo — channel-agnostic fan-out.
+ *
+ * A channel plugin registers an EchoRendererFactory; when an origin turn starts
+ * with streaming-enabled echo targets, we create one mirror resolver
+ * (echo-mirror-resolver.ts) + one channel renderer per target and let the
+ * resolver replay the single agent run onto each target's native renderer. The
+ * agent runs ONCE; each target renders live and natively. Returns undefined for a
+ * target whose channel has no factory or whose streaming is disabled — those fall
+ * back to the post-hoc final mirror (fireEchoDeliveries).
+ */
+export type ChannelEchoRenderer = {
+  /** Driven by the mirror resolver to render the origin run on the target. */
+  options: GetReplyOptions;
+  /** Flush to final state when the origin run ends. */
+  finalize: (final?: ReplyPayload) => Promise<void> | void;
+  /** Abort without finalizing (origin turn aborted). */
+  dispose: () => Promise<void> | void;
+};
+
+export type EchoRendererFactoryParams = {
+  cfg: OpenClawConfig;
+  target: SessionEchoTarget;
+};
+
+export type EchoRendererFactory = (
+  params: EchoRendererFactoryParams,
+) => Promise<ChannelEchoRenderer | undefined> | ChannelEchoRenderer | undefined;
+
+type EchoStreamingState = {
+  factories: Map<string, EchoRendererFactory>;
+  /** sessionKey -> set of target keys already handled by a live renderer this turn. */
+  handledBySession: Map<string, Set<string>>;
+};
+
+const state: EchoStreamingState = {
+  factories: new Map(),
+  handledBySession: new Map(),
+};
+
+export function registerEchoRendererFactory(channel: string, factory: EchoRendererFactory): void {
+  state.factories.set(channel, factory);
+}
+
+export function resolveEchoRendererFactory(channel: string): EchoRendererFactory | undefined {
+  return state.factories.get(channel);
+}
+
+export function echoTargetKey(target: {
+  channel: string;
+  to: string;
+  accountId?: string;
+  threadId?: string | number;
+}): string {
+  return [
+    target.channel,
+    normalizeEchoTargetId(target.channel, target.to),
+    target.accountId ?? "",
+    target.threadId ?? "",
+  ].join("|");
+}
+
+/**
+ * True when a live streaming renderer is (or was) handling this target for this
+ * session turn — the post-hoc assistant mirror must skip it to avoid a duplicate
+ * final message.
+ */
+export function isStreamingEchoTargetHandled(
+  sessionKey: string | undefined,
+  target: { channel: string; to: string; accountId?: string; threadId?: string | number },
+): boolean {
+  if (!sessionKey) {
+    return false;
+  }
+  return state.handledBySession.get(sessionKey)?.has(echoTargetKey(target)) ?? false;
+}
+
+function markHandled(sessionKey: string | undefined, key: string): void {
+  if (!sessionKey) {
+    return;
+  }
+  let set = state.handledBySession.get(sessionKey);
+  if (!set) {
+    set = new Set<string>();
+    state.handledBySession.set(sessionKey, set);
+  }
+  set.add(key);
+}
+
+function unmarkHandled(sessionKey: string | undefined, key: string): void {
+  if (!sessionKey) {
+    return;
+  }
+  const set = state.handledBySession.get(sessionKey);
+  if (!set) {
+    return;
+  }
+  set.delete(key);
+  if (set.size === 0) {
+    state.handledBySession.delete(sessionKey);
+  }
+}
+
+export type StreamingEchoFanoutHandle = {
+  /** Number of live renderers launched. */
+  count: number;
+  /** Abort all live renderers without finalizing (origin turn aborted). */
+  dispose: () => Promise<void>;
+};
+
+/**
+ * Launch one live renderer per streaming-enabled assistant echo target. Must be
+ * called as the origin run starts (the agent-event bus has no replay buffer) — the
+ * mirror resolver subscribes synchronously here.
+ */
+export async function launchStreamingEchoFanout(params: {
+  originRunId: string;
+  cfg: OpenClawConfig;
+  sessionKey?: string;
+  sessionEntry: SessionEntry | undefined;
+  originChannel: string;
+  originTo: string;
+  originAccountId?: string;
+  originThreadId?: string | number;
+}): Promise<StreamingEchoFanoutHandle> {
+  const targets = resolveEchoTargets(params.sessionEntry, {
+    originChannel: params.originChannel,
+    originTo: params.originTo,
+    originAccountId: params.originAccountId,
+    originThreadId: params.originThreadId,
+    role: "assistant",
+  });
+
+  const active: Array<{ key: string; renderer: ChannelEchoRenderer; dispose: () => void }> = [];
+
+  for (const target of targets) {
+    const factory = resolveEchoRendererFactory(target.channel);
+    if (!factory) {
+      continue;
+    }
+    let renderer: ChannelEchoRenderer | undefined;
+    try {
+      renderer = await factory({ cfg: params.cfg, target });
+    } catch (err) {
+      log.warn(
+        `echo renderer factory failed for ${target.channel}:${target.to}: ${formatErrorMessage(err)}`,
+      );
+      continue;
+    }
+    if (!renderer) {
+      // Streaming disabled for this target (or unsupported) — post-hoc mirror handles it.
+      continue;
+    }
+    const key = echoTargetKey(target);
+    const label = `${target.channel}:${target.to}`;
+    const { resolver, dispose: disposeResolver } = createMirrorReplyResolver({
+      originRunId: params.originRunId,
+      targetLabel: label,
+    });
+    markHandled(params.sessionKey, key);
+    // Fire-and-forget: a target render must never block or abort the origin turn.
+    void resolver({} as MsgContext, renderer.options)
+      .then((final) => renderer.finalize((final as ReplyPayload | undefined) ?? undefined))
+      .catch((err: unknown) => {
+        log.warn(`echo stream render failed for ${label}: ${formatErrorMessage(err)}`);
+      })
+      .finally(() => {
+        unmarkHandled(params.sessionKey, key);
+      });
+    active.push({
+      key,
+      renderer,
+      dispose: () => {
+        disposeResolver();
+        void Promise.resolve(renderer?.dispose()).catch(() => {});
+        unmarkHandled(params.sessionKey, key);
+      },
+    });
+  }
+
+  return {
+    count: active.length,
+    dispose: async () => {
+      for (const entry of active) {
+        entry.dispose();
+      }
+    },
+  };
+}
+
+export function resetEchoStreamingForTest(): void {
+  state.factories.clear();
+  state.handledBySession.clear();
+}

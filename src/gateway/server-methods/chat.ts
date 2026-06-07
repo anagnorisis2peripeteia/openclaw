@@ -51,6 +51,7 @@ import {
 } from "../../infra/diagnostics-timeline.js";
 import { formatErrorMessage, formatUncaughtError } from "../../infra/errors.js";
 import { jsonUtf8Bytes } from "../../infra/json-utf8-bytes.js";
+import { fireEchoDeliveries } from "../../infra/outbound/echo.js";
 import { normalizeReplyPayloadsForDelivery } from "../../infra/outbound/payloads.js";
 import { getSessionBindingService } from "../../infra/outbound/session-binding-service.js";
 import { logLargePayload } from "../../logging/diagnostic-payload.js";
@@ -3015,6 +3016,28 @@ export const chatHandlers: GatewayRequestHandlers = {
         status: "started" as const,
       };
       respond(true, ackPayload, undefined, { runId: clientRunId });
+      // User-message echo fires only once the turn is accepted for dispatch
+      // (attachments staged, abort controller registered, run added, ack sent),
+      // mirroring the assistant-echo's post-acceptance placement. Firing it
+      // earlier would leak rejected input if a pre-acceptance path errored out.
+      if (rawMessage) {
+        const userEchoEntry = entry ?? loadSessionEntry(sessionKey, sessionLoadOptions).entry;
+        if (userEchoEntry?.echoTargets?.length) {
+          fireEchoDeliveries(
+            {
+              cfg,
+              sessionKey,
+              sessionEntry: userEchoEntry,
+              originChannel: p.originatingChannel ?? "webchat",
+              originTo: p.originatingTo ?? "",
+              originAccountId: p.originatingAccountId,
+              originThreadId: p.originatingThreadId,
+              role: "user",
+            },
+            [{ text: rawMessage }],
+          );
+        }
+      }
       const persistedImagesPromise = persistChatSendImages({
         images: parsedImages,
         imageOrder,
@@ -3628,6 +3651,25 @@ export const chatHandlers: GatewayRequestHandlers = {
                     agentId,
                     message,
                   });
+                  if (displayReply) {
+                    const echoEntry =
+                      entry ?? loadSessionEntry(sessionKey, sessionLoadOptions).entry;
+                    if (echoEntry?.echoTargets?.length) {
+                      fireEchoDeliveries(
+                        {
+                          cfg,
+                          sessionKey,
+                          sessionEntry: echoEntry,
+                          originChannel: p.originatingChannel ?? "webchat",
+                          originTo: p.originatingTo ?? "",
+                          originAccountId: p.originatingAccountId,
+                          originThreadId: p.originatingThreadId,
+                          role: "assistant",
+                        },
+                        [{ text: displayReply }],
+                      );
+                    }
+                  }
                 }
               } else {
                 const sourceReplyPayloads = deliveredReplies
@@ -3934,6 +3976,25 @@ export const chatHandlers: GatewayRequestHandlers = {
                       message,
                     });
                     broadcastedSourceReplyFinal = true;
+                    if (sourceReplyText) {
+                      const echoEntry =
+                        entry ?? loadSessionEntry(sessionKey, sessionLoadOptions).entry;
+                      if (echoEntry?.echoTargets?.length) {
+                        fireEchoDeliveries(
+                          {
+                            cfg,
+                            sessionKey,
+                            sessionEntry: echoEntry,
+                            originChannel: p.originatingChannel ?? "webchat",
+                            originTo: p.originatingTo ?? "",
+                            originAccountId: p.originatingAccountId,
+                            originThreadId: p.originatingThreadId,
+                            role: "assistant",
+                          },
+                          [{ text: sourceReplyText }],
+                        );
+                      }
+                    }
                   }
                 }
               }

@@ -184,6 +184,7 @@
   "channel-actions",
   "channel-plugin-common",
   "channel-core",
+  "channel-echo",
   "channel-entry-contract",
   "channel-contract",
   "channel-envelope",
