@@ -145,6 +145,15 @@ export async function launchStreamingEchoFanout(params: {
 
   const active: Array<{ key: string; renderer: ChannelEchoRenderer; dispose: () => void }> = [];
 
+  // Marks are per-run: a streamed target stays marked-handled for the WHOLE turn so
+  // the post-hoc assistant mirror (message:sent, which fires after the run resolves)
+  // skips it and we don't double-deliver. Clear the previous run's marks for this
+  // session before re-marking what THIS run actually streams. (Turns are serialized
+  // per session, so the prior run's post-hoc has already read its marks by now.)
+  if (params.sessionKey) {
+    state.handledBySession.delete(params.sessionKey);
+  }
+
   for (const target of targets) {
     const factory = resolveEchoRendererFactory(target.channel);
     if (!factory) {
@@ -171,13 +180,13 @@ export async function launchStreamingEchoFanout(params: {
     });
     markHandled(params.sessionKey, key);
     // Fire-and-forget: a target render must never block or abort the origin turn.
+    // NOTE: do NOT unmark on resolve — the post-hoc message:sent mirror fires AFTER
+    // the run resolves, and must still see this target as streaming-handled so it
+    // skips it. The mark is cleared at the next run's launch (above) or on dispose.
     void resolver({} as MsgContext, renderer.options)
       .then((final) => renderer.finalize((final as ReplyPayload | undefined) ?? undefined))
       .catch((err: unknown) => {
         log.warn(`echo stream render failed for ${label}: ${formatErrorMessage(err)}`);
-      })
-      .finally(() => {
-        unmarkHandled(params.sessionKey, key);
       });
     active.push({
       key,

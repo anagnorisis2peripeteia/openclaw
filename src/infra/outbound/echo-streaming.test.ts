@@ -64,7 +64,39 @@ describe("launchStreamingEchoFanout", () => {
 
     expect(partials).toEqual(["streaming"]);
     expect(finalized).toBe("streaming");
-    // After finalize the handled mark clears (post-hoc mirror is free to run if needed).
+    // Target stays handled AFTER finalize so the post-hoc message:sent mirror (which
+    // fires after the run resolves) skips it — no duplicate final. (Regression: it used
+    // to clear on resolve, letting the post-hoc double-deliver.)
+    expect(isStreamingEchoTargetHandled("s1", { channel: "discord", to: "999" })).toBe(true);
+  });
+
+  it("clears the previous run's handled marks at the next launch (per-run gating)", async () => {
+    registerEchoRendererFactory("discord", () => ({
+      options: {},
+      finalize: () => {},
+      dispose: () => {},
+    }));
+    const streamed = makeEntry([{ channel: "discord", to: "999", echoAssistant: true }]);
+    await launchStreamingEchoFanout({
+      originRunId: "run1",
+      cfg,
+      sessionKey: "s1",
+      sessionEntry: streamed,
+      originChannel: "telegram",
+      originTo: "123",
+    });
+    expect(isStreamingEchoTargetHandled("s1", { channel: "discord", to: "999" })).toBe(true);
+
+    // Next run on the same session has NO streaming targets → its launch clears the
+    // stale mark so the post-hoc mirror is free to deliver again.
+    await launchStreamingEchoFanout({
+      originRunId: "run2",
+      cfg,
+      sessionKey: "s1",
+      sessionEntry: makeEntry([]),
+      originChannel: "telegram",
+      originTo: "123",
+    });
     expect(isStreamingEchoTargetHandled("s1", { channel: "discord", to: "999" })).toBe(false);
   });
 
