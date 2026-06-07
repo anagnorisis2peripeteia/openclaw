@@ -90,9 +90,10 @@ export function echoTargetKey(target: {
 }
 
 /**
- * True when a live streaming renderer is (or was) handling this target for this
- * session turn — the post-hoc assistant mirror must skip it to avoid a duplicate
- * final message.
+ * Pure peek: true when a live streaming renderer is (or was) handling this target
+ * for this session turn. Does NOT clear the mark. The post-hoc assistant mirror
+ * should use {@link consumeStreamingEchoHandled} instead, so a mark can't outlive
+ * the turn that set it.
  */
 export function isStreamingEchoTargetHandled(
   sessionKey: string | undefined,
@@ -102,6 +103,37 @@ export function isStreamingEchoTargetHandled(
     return false;
   }
   return state.handledBySession.get(sessionKey)?.has(echoTargetKey(target)) ?? false;
+}
+
+/**
+ * Consume-on-read: returns whether a live renderer handled this target this turn,
+ * AND clears the mark. The post-hoc assistant mirror (message:sent hook and the
+ * chat.send echo path) is the single consumer per turn — once it has skipped a
+ * streamed target, the mark has done its job and must be released, otherwise a
+ * LATER reply that delivers without launching a fan-out (a command reply, a
+ * fast-abort reply) would read the stale mark and have its own post-hoc echo
+ * wrongly suppressed. Returns false (no-op) for non-streamed targets and missing
+ * sessions.
+ */
+export function consumeStreamingEchoHandled(
+  sessionKey: string | undefined,
+  target: { channel: string; to: string; accountId?: string; threadId?: string | number },
+): boolean {
+  if (!sessionKey) {
+    return false;
+  }
+  const set = state.handledBySession.get(sessionKey);
+  if (!set) {
+    return false;
+  }
+  const key = echoTargetKey(target);
+  if (!set.delete(key)) {
+    return false;
+  }
+  if (set.size === 0) {
+    state.handledBySession.delete(sessionKey);
+  }
+  return true;
 }
 
 function markHandled(sessionKey: string | undefined, key: string): void {
@@ -199,7 +231,9 @@ export async function launchStreamingEchoFanout(params: {
     // Fire-and-forget: a target render must never block or abort the origin turn.
     // NOTE: do NOT unmark on resolve — the post-hoc message:sent mirror fires AFTER
     // the run resolves, and must still see this target as streaming-handled so it
-    // skips it. The mark is cleared at the next run's launch (above) or on dispose.
+    // skips it. The mark is released when that post-hoc mirror CONSUMES it
+    // (consumeStreamingEchoHandled), so it can't outlive this turn; clear-at-launch
+    // (above) and dispose are backstops for the run-errored-before-post-hoc edge.
     void resolver({} as MsgContext, renderer.options)
       .then((final) => renderer.finalize((final as ReplyPayload | undefined) ?? undefined))
       .catch((err: unknown) => {

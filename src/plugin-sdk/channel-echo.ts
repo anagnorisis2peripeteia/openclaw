@@ -15,6 +15,7 @@
  *   origin turn; the fan-out isolates each renderer.
  */
 export {
+  consumeStreamingEchoHandled,
   echoTargetKey,
   isStreamingEchoTargetHandled,
   registerEchoRendererFactory,

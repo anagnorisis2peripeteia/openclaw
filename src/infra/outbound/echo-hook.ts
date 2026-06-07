@@ -5,7 +5,7 @@ import { readSessionEntry } from "../../config/sessions/store-load.js";
 import type { SessionEntry } from "../../config/sessions/types.js";
 import { registerInternalHook, type InternalHookEvent } from "../../hooks/internal-hooks.js";
 import { parseAgentSessionKey } from "../../routing/session-key.js";
-import { isStreamingEchoTargetHandled } from "./echo-streaming.js";
+import { consumeStreamingEchoHandled } from "./echo-streaming.js";
 import { fireEchoDeliveries } from "./echo.js";
 
 let registered = false;
@@ -91,7 +91,7 @@ async function handleMessageSent(event: InternalHookEvent): Promise<void> {
     // without a renderer) fall through to this post-hoc mirror as before.
     {
       prefixed: false,
-      filterTargets: (target) => !isStreamingEchoTargetHandled(sessionKey, target),
+      filterTargets: (target) => !consumeStreamingEchoHandled(sessionKey, target),
     },
   );
 }

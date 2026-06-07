@@ -3,6 +3,7 @@ import type { SessionEchoTarget, SessionEntry } from "../../config/sessions/type
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { emitAgentEvent, resetAgentEventsForTest } from "../agent-events.js";
 import {
+  consumeStreamingEchoHandled,
   isStreamingEchoTargetHandled,
   launchStreamingEchoFanout,
   registerEchoRendererFactory,
@@ -98,6 +99,41 @@ describe("launchStreamingEchoFanout", () => {
       originTo: "123",
     });
     expect(isStreamingEchoTargetHandled("s1", { channel: "discord", to: "999" })).toBe(false);
+  });
+
+  it("consume-on-read releases the mark so a later non-streaming reply isn't suppressed", async () => {
+    // Regression: a streamed turn marks the target handled and (correctly) keeps it
+    // marked past the run's resolve so the post-hoc mirror skips it. But the mark used
+    // to be cleared ONLY at the next launch — so a follow-up reply that delivers WITHOUT
+    // launching a fan-out (a command reply, a fast-abort reply) would read the stale mark
+    // and have its own post-hoc echo wrongly suppressed. consumeStreamingEchoHandled
+    // releases the mark as the post-hoc mirror reads it.
+    registerEchoRendererFactory("discord", () => ({
+      options: {},
+      finalize: () => {},
+      dispose: () => {},
+    }));
+    const target = { channel: "discord", to: "999" };
+    await launchStreamingEchoFanout({
+      originRunId: "run1",
+      cfg,
+      sessionKey: "s1",
+      sessionEntry: makeEntry([{ channel: "discord", to: "999", echoAssistant: true }]),
+      originChannel: "telegram",
+      originTo: "123",
+    });
+
+    // The streamed turn's post-hoc mirror consumes the mark (skips the target) ...
+    expect(consumeStreamingEchoHandled("s1", target)).toBe(true);
+    // ... and it's released, so a later reply with NO new launch sees a clean slate
+    // and is free to deliver its post-hoc echo.
+    expect(isStreamingEchoTargetHandled("s1", target)).toBe(false);
+    expect(consumeStreamingEchoHandled("s1", target)).toBe(false);
+  });
+
+  it("consumeStreamingEchoHandled is a no-op for non-streamed targets and missing sessions", () => {
+    expect(consumeStreamingEchoHandled(undefined, { channel: "discord", to: "1" })).toBe(false);
+    expect(consumeStreamingEchoHandled("nope", { channel: "discord", to: "1" })).toBe(false);
   });
 
   it("skips targets whose channel has no registered factory", async () => {
