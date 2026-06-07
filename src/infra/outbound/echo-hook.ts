@@ -5,6 +5,7 @@ import { readSessionEntry } from "../../config/sessions/store-load.js";
 import type { SessionEntry } from "../../config/sessions/types.js";
 import { registerInternalHook, type InternalHookEvent } from "../../hooks/internal-hooks.js";
 import { parseAgentSessionKey } from "../../routing/session-key.js";
+import { isStreamingEchoTargetHandled } from "./echo-streaming.js";
 import { fireEchoDeliveries } from "./echo.js";
 
 let registered = false;
@@ -68,10 +69,11 @@ async function handleMessageSent(event: InternalHookEvent): Promise<void> {
     return;
   }
 
+  const sessionKey = event.sessionKey;
   fireEchoDeliveries(
     {
       cfg: resolved.cfg,
-      sessionKey: event.sessionKey,
+      sessionKey,
       sessionEntry: resolved.entry,
       originChannel,
       originTo,
@@ -82,8 +84,15 @@ async function handleMessageSent(event: InternalHookEvent): Promise<void> {
     [{ text: ctx.content }],
     // Native-final delivery: the response mirrors to pinned channels as a normal,
     // natively-formatted reply (no "[echo]" prefix). Only the user prompt is marked
-    // as an echo. (True per-token streaming on echo channels is the B-full follow-up.)
-    { prefixed: false },
+    // as an echo.
+    //
+    // B-full: targets already rendered live by a streaming echo renderer are skipped
+    // here so they don't get a duplicate final. Non-streaming targets (and channels
+    // without a renderer) fall through to this post-hoc mirror as before.
+    {
+      prefixed: false,
+      filterTargets: (target) => !isStreamingEchoTargetHandled(sessionKey, target),
+    },
   );
 }
 

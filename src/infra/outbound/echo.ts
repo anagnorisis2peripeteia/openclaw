@@ -97,15 +97,27 @@ function prefixPayloads(payloads: ReplyPayload[], prefix: string): ReplyPayload[
 export function fireEchoDeliveries(
   ctx: EchoDeliveryContext,
   payloads: ReplyPayload[],
-  options?: { prefixed?: boolean },
+  options?: {
+    prefixed?: boolean;
+    /**
+     * Drop targets for which this returns false. Used to skip targets already
+     * handled by a live streaming renderer (B-full) so the post-hoc final mirror
+     * does not double-deliver. Injected (not imported) to avoid an echo-streaming
+     * import cycle.
+     */
+    filterTargets?: (target: SessionEchoTarget) => boolean;
+  },
 ): void {
-  const targets = resolveEchoTargets(ctx.sessionEntry, {
+  const resolvedTargets = resolveEchoTargets(ctx.sessionEntry, {
     originChannel: ctx.originChannel,
     originTo: ctx.originTo,
     originAccountId: ctx.originAccountId,
     originThreadId: ctx.originThreadId,
     role: ctx.role,
   });
+  const targets = options?.filterTargets
+    ? resolvedTargets.filter(options.filterTargets)
+    : resolvedTargets;
 
   if (targets.length === 0) {
     return;
