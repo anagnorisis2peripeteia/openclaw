@@ -8,6 +8,10 @@ vi.mock("../../infra/outbound/echo.js", () => ({
   fireEchoDeliveries: vi.fn(),
 }));
 
+vi.mock("../../infra/outbound/echo-streaming.js", () => ({
+  consumeStreamingEchoHandled: vi.fn(() => false),
+}));
+
 // Force the loaded session entry to carry an echo target so the echo guard
 // (`userEchoEntry?.echoTargets?.length`) is satisfied. We keep every other
 // session-utils export real so the handler's pre-acceptance resolution
@@ -48,12 +52,15 @@ vi.mock("../../auto-reply/dispatch.js", () => ({
 }));
 
 import { dispatchInboundMessage as _mockDispatch } from "../../auto-reply/dispatch.js";
+import { setReplyPayloadMetadata } from "../../auto-reply/reply-payload.js";
+import { consumeStreamingEchoHandled as _mockConsumeStreamingEchoHandled } from "../../infra/outbound/echo-streaming.js";
 import { fireEchoDeliveries as _mockFireEcho } from "../../infra/outbound/echo.js";
 import { chatHandlers } from "./chat.js";
 import type { GatewayRequestContext } from "./types.js";
 
 const mockFireEcho = vi.mocked(_mockFireEcho);
 const mockDispatch = vi.mocked(_mockDispatch);
+const mockConsumeStreamingEchoHandled = vi.mocked(_mockConsumeStreamingEchoHandled);
 
 function createMockContext() {
   return {
@@ -90,6 +97,8 @@ describe("chat.send user-message echo placement", () => {
   beforeEach(() => {
     mockFireEcho.mockReset();
     mockDispatch.mockReset();
+    mockConsumeStreamingEchoHandled.mockReset();
+    mockConsumeStreamingEchoHandled.mockReturnValue(false);
     mockDispatch.mockResolvedValue({ beforeAgentRunBlocked: false } as never);
   });
 
@@ -119,5 +128,50 @@ describe("chat.send user-message echo placement", () => {
     // canonical session key resolved by loadSessionEntry (legacy "main" -> agent-scoped)
     expect((opts as { sessionKey: string }).sessionKey).toBe("agent:main:main");
     expect(payloads).toEqual([{ text: "hello echo" }]);
+  });
+
+  it("gates source-reply assistant echo finals against streaming-handled targets", async () => {
+    const ctx = createMockContext();
+    const sourceReply = setReplyPayloadMetadata(
+      { text: "source reply echo" },
+      {
+        sourceReplyTranscriptMirror: {
+          sessionKey: "main",
+          text: "source reply echo",
+          idempotencyKey: "source-reply-echo",
+        },
+      },
+    );
+    mockDispatch.mockImplementation(async (params) => {
+      params.replyOptions?.onAgentRunStart?.("run-source-reply-echo");
+      params.dispatcher.sendFinalReply(sourceReply);
+      params.dispatcher.markComplete();
+      await params.dispatcher.waitForIdle();
+      return { beforeAgentRunBlocked: false } as never;
+    });
+
+    await runChatSend(ctx, "run-source-reply-echo");
+
+    let assistantEcho: (typeof mockFireEcho.mock.calls)[number] | undefined;
+    await vi.waitFor(() => {
+      assistantEcho = mockFireEcho.mock.calls.find(
+        ([opts]) => (opts as { role?: string }).role === "assistant",
+      );
+      expect(assistantEcho).toBeDefined();
+    });
+    expect(assistantEcho).toBeDefined();
+    const [opts, payloads, deliveryOptions] = assistantEcho!;
+    expect((opts as { sessionKey: string }).sessionKey).toBe("agent:main:main");
+    expect(payloads).toEqual([{ text: "source reply echo" }]);
+    expect(deliveryOptions).toMatchObject({ prefixed: false });
+
+    const target = { channel: "discord", to: "999" };
+    mockConsumeStreamingEchoHandled.mockReturnValueOnce(true);
+    expect(
+      (deliveryOptions as { filterTargets: (candidate: typeof target) => boolean }).filterTargets(
+        target,
+      ),
+    ).toBe(false);
+    expect(mockConsumeStreamingEchoHandled).toHaveBeenCalledWith("agent:main:main", target);
   });
 });

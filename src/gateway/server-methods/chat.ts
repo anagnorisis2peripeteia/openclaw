@@ -4171,6 +4171,11 @@ export const chatHandlers: GatewayRequestHandlers = {
                             role: "assistant",
                           },
                           [{ text: sourceReplyText }],
+                          {
+                            prefixed: false,
+                            filterTargets: (target) =>
+                              !consumeStreamingEchoHandled(sessionKey, target),
+                          },
                         );
                       }
                     }
