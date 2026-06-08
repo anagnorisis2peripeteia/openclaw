@@ -24,13 +24,22 @@ const streamModeMock = vi.fn();
 vi.mock("./bot/helpers.js", () => ({
   resolveTelegramStreamMode: (...args: unknown[]) => streamModeMock(...args),
 }));
+const resolveClientOptionsMock = vi.fn();
+vi.mock("./client-options.js", () => ({
+  resolveTelegramClientOptions: (...args: unknown[]) => resolveClientOptionsMock(...args),
+}));
 const createRendererMock = vi.fn(() => ({ options: {}, finalize: () => {}, dispose: () => {} }));
 vi.mock("./echo-renderer.js", () => ({
   createTelegramEchoRenderer: (...args: unknown[]) => createRendererMock(...args),
 }));
+const botConstructorMock = vi.fn();
 vi.mock("grammy", () => ({
   Bot: class {
     api = { config: { use: vi.fn() } };
+
+    constructor(token: string, config?: unknown) {
+      botConstructorMock(token, config);
+    }
   },
 }));
 
@@ -43,8 +52,11 @@ describe("registerTelegramEchoRenderer", () => {
     createRendererMock.mockClear();
     accountMock.mockReset();
     streamModeMock.mockReset();
+    resolveClientOptionsMock.mockReset();
+    botConstructorMock.mockReset();
     accountMock.mockReturnValue({ accountId: "default", token: "TOKEN", config: {} });
     streamModeMock.mockReturnValue("progress");
+    resolveClientOptionsMock.mockReturnValue(undefined);
     registerTelegramEchoRenderer();
   });
 
@@ -64,6 +76,26 @@ describe("registerTelegramEchoRenderer", () => {
     // chat id normalized (prefix stripped, numeric coerced).
     expect(passed.chatId).toBe(123);
     expect(passed.textLimit).toBe(4096);
+  });
+
+  it("constructs the bot with the resolved Telegram client options", () => {
+    const client = { apiRoot: "https://telegram.example.test" };
+    resolveClientOptionsMock.mockReturnValue(client);
+
+    capturedFactory?.({
+      cfg,
+      target: {
+        channel: "telegram",
+        to: "telegram:123",
+        accountId: "default",
+        threadId: undefined,
+      },
+    });
+
+    expect(resolveClientOptionsMock).toHaveBeenCalledWith(
+      expect.objectContaining({ accountId: "default", token: "TOKEN" }),
+    );
+    expect(botConstructorMock).toHaveBeenCalledWith("TOKEN", { client });
   });
 
   it("returns undefined (post-hoc fallback) when the account streams off", () => {

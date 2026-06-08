@@ -4,6 +4,7 @@ import { resolveTextChunkLimit } from "openclaw/plugin-sdk/reply-chunking";
 import { getOrCreateAccountThrottler } from "./account-throttler.js";
 import { resolveTelegramAccount } from "./accounts.js";
 import { resolveTelegramStreamMode, type TelegramThreadSpec } from "./bot/helpers.js";
+import { resolveTelegramClientOptions } from "./client-options.js";
 import { createTelegramEchoRenderer } from "./echo-renderer.js";
 
 let registered = false;
@@ -44,7 +45,8 @@ export function registerTelegramEchoRenderer(): void {
     if (resolveTelegramStreamMode(account.config) === "off") {
       return undefined;
     }
-    const bot = new Bot(account.token);
+    const client = resolveTelegramClientOptions(account);
+    const bot = new Bot(account.token, client ? { client } : undefined);
     bot.api.config.use(getOrCreateAccountThrottler(account.token));
     const textLimit = resolveTextChunkLimit(cfg, "telegram", account.accountId);
     const threadIdNum = target.threadId != null ? Number(target.threadId) : Number.NaN;
