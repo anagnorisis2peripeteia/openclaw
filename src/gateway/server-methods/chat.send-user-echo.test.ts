@@ -128,6 +128,10 @@ describe("chat.send user-message echo placement", () => {
     // canonical session key resolved by loadSessionEntry (legacy "main" -> agent-scoped)
     expect((opts as { sessionKey: string }).sessionKey).toBe("agent:main:main");
     expect(payloads).toEqual([{ text: "hello echo" }]);
+    expect(
+      (mockDispatch.mock.calls[0]?.[0].ctx as { EchoUserAlreadyDelivered?: boolean })
+        .EchoUserAlreadyDelivered,
+    ).toBe(true);
   });
 
   it("gates source-reply assistant echo finals against streaming-handled targets", async () => {

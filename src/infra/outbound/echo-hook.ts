@@ -103,10 +103,11 @@ async function handleMessageReceived(event: InternalHookEvent): Promise<void> {
     channelId?: string;
     accountId?: string;
     conversationId?: string;
+    echoUserAlreadyDelivered?: boolean;
     metadata?: { threadId?: string | number };
   } | null;
 
-  if (!ctx?.content || !event.sessionKey) {
+  if (!ctx?.content || !event.sessionKey || ctx.echoUserAlreadyDelivered === true) {
     return;
   }
 

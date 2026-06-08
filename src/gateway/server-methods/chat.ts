@@ -3147,6 +3147,7 @@ export const chatHandlers: GatewayRequestHandlers = {
       }
     }
 
+    let userEchoAlreadyDelivered = false;
     try {
       const activeRunAbort = registerChatAbortController({
         chatAbortControllers: context.chatAbortControllers,
@@ -3206,6 +3207,7 @@ export const chatHandlers: GatewayRequestHandlers = {
             },
             [{ text: rawMessage }],
           );
+          userEchoAlreadyDelivered = true;
         }
       }
       const persistedImagesPromise = persistChatSendImages({
@@ -3280,6 +3282,7 @@ export const chatHandlers: GatewayRequestHandlers = {
         OriginatingChannel: originatingChannel,
         OriginatingTo: originatingTo,
         ExplicitDeliverRoute: explicitDeliverRoute,
+        EchoUserAlreadyDelivered: userEchoAlreadyDelivered,
         AccountId: accountId,
         MessageThreadId: messageThreadId,
         ChatType: "direct",

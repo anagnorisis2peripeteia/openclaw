@@ -45,6 +45,7 @@ export type CanonicalInboundMessageHookContext = {
   surface?: string;
   threadId?: string | number;
   threadParentId?: string | number;
+  echoUserAlreadyDelivered?: boolean;
   // `mediaPath(s)` are files OpenClaw has already staged locally. `mediaUrl(s)`
   // are provider/media-server references that may not exist on this host.
   mediaPath?: string;
@@ -147,6 +148,7 @@ export function deriveInboundMessageHookContext(
     surface: ctx.Surface,
     threadId: ctx.MessageThreadId,
     threadParentId: ctx.ThreadParentId,
+    echoUserAlreadyDelivered: ctx.EchoUserAlreadyDelivered === true,
     mediaPath: ctx.MediaPath ?? mediaPaths?.[0],
     mediaUrl: ctx.MediaUrl ?? mediaUrls?.[0],
     mediaType: ctx.MediaType ?? mediaTypes?.[0],
@@ -426,6 +428,7 @@ export function toInternalMessageReceivedContext(
     accountId: canonical.accountId,
     conversationId: canonical.conversationId,
     messageId: canonical.messageId,
+    echoUserAlreadyDelivered: canonical.echoUserAlreadyDelivered,
     metadata: {
       to: canonical.to,
       provider: canonical.provider,

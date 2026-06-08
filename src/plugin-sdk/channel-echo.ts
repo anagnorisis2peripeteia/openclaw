@@ -14,13 +14,7 @@
  *   final-text mirror handles that target. A renderer MUST NOT block or throw into the
  *   origin turn; the fan-out isolates each renderer.
  */
-export {
-  consumeStreamingEchoHandled,
-  echoTargetKey,
-  isStreamingEchoTargetHandled,
-  registerEchoRendererFactory,
-  resolveEchoRendererFactory,
-} from "../infra/outbound/echo-streaming.js";
+export { registerEchoRendererFactory } from "../infra/outbound/echo-streaming.js";
 export type {
   ChannelEchoRenderer,
   EchoRendererFactory,
