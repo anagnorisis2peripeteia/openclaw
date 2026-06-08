@@ -161,7 +161,12 @@ describe("chat.send user-message echo placement", () => {
     });
     expect(assistantEcho).toBeDefined();
     const [opts, payloads, deliveryOptions] = assistantEcho!;
-    expect((opts as { sessionKey: string }).sessionKey).toBe("agent:main:main");
+    expect(opts).toMatchObject({
+      sessionKey: "agent:main:main",
+      originChannel: "webchat",
+      originTo: "",
+      role: "assistant",
+    });
     expect(payloads).toEqual([{ text: "source reply echo" }]);
     expect(deliveryOptions).toMatchObject({ prefixed: false });
 
