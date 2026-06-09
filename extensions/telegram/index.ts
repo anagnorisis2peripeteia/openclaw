@@ -5,6 +5,9 @@ import {
 } from "openclaw/plugin-sdk/channel-entry-contract";
 
 function registerTelegramFull(api: OpenClawPluginApi): void {
+  if (api.registrationMode !== "full") {
+    return;
+  }
   const registerEchoRenderer = loadBundledEntryExportSync<(api: OpenClawPluginApi) => void>(
     import.meta.url,
     {

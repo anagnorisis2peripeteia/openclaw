@@ -28,12 +28,14 @@ function normalizeTelegramChatId(to: string): string | number {
  * returns undefined here and falls back to the post-hoc final mirror.
  */
 export function registerTelegramEchoRenderer(
-  api: Pick<OpenClawPluginApi, "registerEchoRendererFactory">,
+  api: Pick<OpenClawPluginApi, "registrationMode" | "registerEchoRendererFactory">,
 ): void {
+  if (api.registrationMode !== "full") {
+    return;
+  }
   if (registered) {
     return;
   }
-  registered = true;
   api.registerEchoRendererFactory(({ cfg, target }) => {
     let account: ReturnType<typeof resolveTelegramAccount>;
     try {
@@ -64,4 +66,9 @@ export function registerTelegramEchoRenderer(
       textLimit,
     });
   });
+  registered = true;
+}
+
+export function resetTelegramEchoRendererRegistrationForTest(): void {
+  registered = false;
 }

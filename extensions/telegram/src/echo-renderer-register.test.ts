@@ -41,7 +41,10 @@ vi.mock("grammy", () => ({
   },
 }));
 
-import { registerTelegramEchoRenderer } from "./echo-renderer-register.js";
+import {
+  registerTelegramEchoRenderer,
+  resetTelegramEchoRendererRegistrationForTest,
+} from "./echo-renderer-register.js";
 
 const cfg = {} as OpenClawConfig;
 
@@ -53,12 +56,34 @@ describe("registerTelegramEchoRenderer", () => {
     resolveClientOptionsMock.mockReset();
     botConstructorMock.mockReset();
     registerEchoRendererFactoryMock.mockClear();
+    capturedFactory = undefined;
+    resetTelegramEchoRendererRegistrationForTest();
     accountMock.mockReturnValue({ accountId: "default", token: "TOKEN", config: {} });
     streamModeMock.mockReturnValue("progress");
     resolveClientOptionsMock.mockReturnValue(undefined);
     registerTelegramEchoRenderer({
+      registrationMode: "full",
       registerEchoRendererFactory: registerEchoRendererFactoryMock,
     });
+  });
+
+  it("does not let tool discovery consume the full registration attempt", () => {
+    registerEchoRendererFactoryMock.mockClear();
+    capturedFactory = undefined;
+    resetTelegramEchoRendererRegistrationForTest();
+
+    registerTelegramEchoRenderer({
+      registrationMode: "tool-discovery",
+      registerEchoRendererFactory: registerEchoRendererFactoryMock,
+    });
+    expect(registerEchoRendererFactoryMock).not.toHaveBeenCalled();
+
+    registerTelegramEchoRenderer({
+      registrationMode: "full",
+      registerEchoRendererFactory: registerEchoRendererFactoryMock,
+    });
+    expect(registerEchoRendererFactoryMock).toHaveBeenCalledTimes(1);
+    expect(capturedFactory).toBeTypeOf("function");
   });
 
   it("registers a telegram factory that builds a renderer for a streaming account", () => {
