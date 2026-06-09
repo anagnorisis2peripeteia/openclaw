@@ -1,4 +1,19 @@
-import { defineBundledChannelEntry } from "openclaw/plugin-sdk/channel-entry-contract";
+import {
+  defineBundledChannelEntry,
+  loadBundledEntryExportSync,
+  type OpenClawPluginApi,
+} from "openclaw/plugin-sdk/channel-entry-contract";
+
+function registerTelegramFull(api: OpenClawPluginApi): void {
+  const registerEchoRenderer = loadBundledEntryExportSync<(api: OpenClawPluginApi) => void>(
+    import.meta.url,
+    {
+      specifier: "./echo-renderer-api.js",
+      exportName: "registerTelegramEchoRenderer",
+    },
+  );
+  registerEchoRenderer(api);
+}
 
 export default defineBundledChannelEntry({
   id: "telegram",
@@ -21,4 +36,5 @@ export default defineBundledChannelEntry({
     specifier: "./account-inspect-api.js",
     exportName: "inspectTelegramReadOnlyAccount",
   },
+  registerFull: registerTelegramFull,
 });

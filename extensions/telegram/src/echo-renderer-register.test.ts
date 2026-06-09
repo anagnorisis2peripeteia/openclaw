@@ -4,12 +4,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 let capturedFactory:
   | ((params: { cfg: OpenClawConfig; target: Record<string, unknown> }) => unknown)
   | undefined;
+const registerEchoRendererFactoryMock = vi.fn((factory: typeof capturedFactory) => {
+  capturedFactory = factory;
+});
 
-vi.mock("openclaw/plugin-sdk/channel-echo", () => ({
-  registerEchoRendererFactory: (_channel: string, factory: typeof capturedFactory) => {
-    capturedFactory = factory;
-  },
-}));
 vi.mock("openclaw/plugin-sdk/reply-chunking", () => ({
   resolveTextChunkLimit: () => 4096,
 }));
@@ -54,13 +52,17 @@ describe("registerTelegramEchoRenderer", () => {
     streamModeMock.mockReset();
     resolveClientOptionsMock.mockReset();
     botConstructorMock.mockReset();
+    registerEchoRendererFactoryMock.mockClear();
     accountMock.mockReturnValue({ accountId: "default", token: "TOKEN", config: {} });
     streamModeMock.mockReturnValue("progress");
     resolveClientOptionsMock.mockReturnValue(undefined);
-    registerTelegramEchoRenderer();
+    registerTelegramEchoRenderer({
+      registerEchoRendererFactory: registerEchoRendererFactoryMock,
+    });
   });
 
   it("registers a telegram factory that builds a renderer for a streaming account", () => {
+    expect(registerEchoRendererFactoryMock).toHaveBeenCalledTimes(1);
     expect(capturedFactory).toBeTypeOf("function");
     const renderer = capturedFactory?.({
       cfg,

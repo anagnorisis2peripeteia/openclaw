@@ -1,5 +1,5 @@
 import { Bot } from "grammy";
-import { registerEchoRendererFactory } from "openclaw/plugin-sdk/channel-echo";
+import type { OpenClawPluginApi } from "openclaw/plugin-sdk/plugin-entry";
 import { resolveTextChunkLimit } from "openclaw/plugin-sdk/reply-chunking";
 import { getOrCreateAccountThrottler } from "./account-throttler.js";
 import { resolveTelegramAccount } from "./accounts.js";
@@ -27,12 +27,14 @@ function normalizeTelegramChatId(to: string): string | number {
  * Reuses the channel's own stream config: a target whose account has streaming off
  * returns undefined here and falls back to the post-hoc final mirror.
  */
-export function registerTelegramEchoRenderer(): void {
+export function registerTelegramEchoRenderer(
+  api: Pick<OpenClawPluginApi, "registerEchoRendererFactory">,
+): void {
   if (registered) {
     return;
   }
   registered = true;
-  registerEchoRendererFactory("telegram", ({ cfg, target }) => {
+  api.registerEchoRendererFactory(({ cfg, target }) => {
     let account: ReturnType<typeof resolveTelegramAccount>;
     try {
       account = resolveTelegramAccount({ cfg, accountId: target.accountId });
