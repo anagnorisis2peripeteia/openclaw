@@ -1,0 +1,50 @@
+$ node scripts/run-node.mjs gateway --port 18789 --allow-unconfigured
+[openclaw] Building TypeScript (dist is stale: dirty_watched_tree - dirty watched source tree).
+[openclaw] Building bundled plugin assets.
+[canvas] build: node scripts/bundle-a2ui.mjs
+A2UI bundle up to date; skipping.
+[diffs] build: node ../../scripts/build-diffs-viewer-runtime.mjs curated
+[diffs-language-pack] build: node ../../scripts/build-diffs-viewer-runtime.mjs full
+runtime-postbuild: plugin SDK root alias completed in 1ms
+runtime-postbuild: bundled plugin metadata completed in 298ms
+runtime-postbuild: official channel catalog completed in 6ms
+runtime-postbuild: bundled plugin runtime overlay completed in 254ms
+runtime-postbuild: static extension assets completed in 72ms
+runtime-postbuild: stable root runtime imports completed in 212ms
+runtime-postbuild: stable root runtime aliases completed in 27ms
+runtime-postbuild: legacy root runtime compat aliases completed in 4ms
+runtime-postbuild: legacy CLI exit compat chunks completed in 0ms
+2026-06-10T13:17:26.082+00:00 [gateway] loading configuration…
+2026-06-10T13:17:26.137+00:00 [gateway] resolving authentication…
+2026-06-10T13:17:26.145+00:00 [gateway] Control UI assets are missing; first startup may spend a few seconds building them before the gateway binds. `pnpm gateway:watch` does not rebuild Control UI assets, so rerun `pnpm ui:build` after UI changes or use `pnpm ui:dev` while developing the Control UI. For a full local dist, run `pnpm build && pnpm ui:build`.
+2026-06-10T13:17:26.153+00:00 [gateway] starting...
+2026-06-10T13:17:30.908+00:00 [gateway] Control UI assets missing; building (ui:build, auto-installs UI deps)…
+2026-06-10T13:17:30.930+00:00 [gateway] starting HTTP server...
+2026-06-10T13:17:30.989+00:00 [health-monitor] started (interval: 300s, startup-grace: 60s, channel-connect-grace: 120s)
+2026-06-10T13:17:31.452+00:00 [gateway] agent model: claude-cli/claude-sonnet-4-6 (thinking=low, fast=off)
+2026-06-10T13:17:31.453+00:00 [gateway] http server listening (8 plugins: acpx, canvas, device-pair, file-transfer, memory-core, phone-control, talk-voice, telegram; 5.3s)
+2026-06-10T13:17:31.454+00:00 [gateway] log file: /tmp/openclaw/openclaw-2026-06-10.log
+2026-06-10T13:17:31.459+00:00 [gateway] starting channels and sidecars...
+2026-06-10T13:17:31.544+00:00 [plugins] embedded acpx runtime backend registered lazily
+2026-06-10T13:17:31.558+00:00 [gateway] ready
+2026-06-10T13:17:31.647+00:00 [heartbeat] started
+2026-06-10T13:17:31.771+00:00 [telegram] [default] starting provider (@JeeevesOpenClawTelegram2bot)
+2026-06-10T13:17:32.326+00:00 [telegram] menu text exceeded the conservative 5700-character payload budget; shortening descriptions to keep 94 commands visible.
+2026-06-10T13:17:32.672+00:00 [telegram] [diag] isolated polling ingress started spool=/tmp/cap/state-tnone/telegram/ingress-spool-default
+2026-06-10T13:17:35.225+00:00 [telegram] Inbound message telegram:group:-1003900553563:topic:1 -> @JeeevesOpenClawTelegram2bot (group, 23 chars)
+2026-06-10T13:17:36.416+00:00 [agent/cli-backend] workspace bootstrap file AGENTS.md is 35678 chars (limit 20000); truncating in injected context (sessionKey=agent:main:telegram:group:-1003900553563:topic:1)
+2026-06-10T13:17:36.487+00:00 [agents/tool-policy] tool policy removed 5 tool(s) via tools.profile (coding): agents_list, gateway, message, nodes, tts
+2026-06-10T13:17:36.552+00:00 [agent/cli-backend] cli exec: provider=claude-cli model=claude-sonnet-4-6 promptChars=614 trigger=user useResume=false session=none resumeSession=none reuse=none historyPrompt=none
+2026-06-10T13:17:36.563+00:00 [agent/cli-backend] claude live session start: provider=claude-cli model=claude-sonnet-4-6 activeSessions=1
+2026-06-10T13:17:37.114+00:00 [agents/tool-policy] tool policy removed 5 tool(s) via tools.profile (coding): agents_list, gateway, message, nodes, tts
+2026-06-10T13:17:37.708+00:00 [gateway] provider auth state pre-warmed in 1069ms eventLoopMax=47.4ms
+2026-06-10T13:17:41.563+00:00 [gateway] agent runtime plugins pre-warmed in 6ms
+2026-06-10T13:17:41.779+00:00 [agent/cli-backend] claude live session turn: provider=claude-cli model=claude-sonnet-4-6 durationMs=5214 rawLines=28 outBytes=8 outHash=b07800ad4773
+2026-06-10T13:17:51.421+00:00 [gateway] device pairing auto-approved device=63fe29fed23fd17d2d3ebdc36ed6a81b95ce14df1e4e0242f617ac9a0b41126c role=operator
+2026-06-10T13:17:52.079+00:00 [agents/tool-policy] tool policy removed 5 tool(s) via tools.profile (coding): agents_list, gateway, message, nodes, tts
+2026-06-10T13:17:52.080+00:00 [agent/cli-backend] cli session reset: provider=claude-cli reason=system-prompt
+2026-06-10T13:17:52.093+00:00 [agent/cli-backend] cli exec: provider=claude-cli model=claude-sonnet-4-6 promptChars=714 trigger=heartbeat useResume=false session=none resumeSession=none reuse=invalidated:system-prompt historyPrompt=present
+2026-06-10T13:17:52.098+00:00 [agent/cli-backend] claude live session start: provider=claude-cli model=claude-sonnet-4-6 activeSessions=2
+2026-06-10T13:17:52.489+00:00 [agents/tool-policy] tool policy removed 5 tool(s) via tools.profile (coding): agents_list, gateway, message, nodes, tts
+2026-06-10T13:17:55.492+00:00 [agent/cli-backend] claude live session turn: provider=claude-cli model=claude-sonnet-4-6 durationMs=3392 rawLines=13 outBytes=12 outHash=084217f1af40
+2026-06-10T13:17:55.822+00:00 [WAKEDBG] runHeartbeatOnce result: {"status":"ran","durationMs":4060}
