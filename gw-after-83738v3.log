@@ -1,0 +1,44 @@
+$ node scripts/run-node.mjs gateway --port 18789 --allow-unconfigured
+2026-06-10T04:29:43.129+00:00 [gateway] loading configuration…
+2026-06-10T04:29:43.187+00:00 [gateway] resolving authentication…
+2026-06-10T04:29:43.201+00:00 [gateway] starting...
+2026-06-10T04:29:48.025+00:00 [gateway] starting HTTP server...
+2026-06-10T04:29:48.052+00:00 [health-monitor] started (interval: 300s, startup-grace: 60s, channel-connect-grace: 120s)
+2026-06-10T04:29:48.442+00:00 [gateway] agent model: claude-cli/claude-sonnet-4-6 (thinking=low, fast=off)
+2026-06-10T04:29:48.443+00:00 [gateway] http server listening (8 plugins: acpx, canvas, device-pair, file-transfer, memory-core, phone-control, talk-voice, telegram; 5.2s)
+2026-06-10T04:29:48.444+00:00 [gateway] log file: /tmp/openclaw/openclaw-2026-06-10.log
+2026-06-10T04:29:48.446+00:00 [gateway] starting channels and sidecars...
+2026-06-10T04:29:48.514+00:00 [plugins] embedded acpx runtime backend registered lazily
+2026-06-10T04:29:48.530+00:00 [gateway] ready
+2026-06-10T04:29:48.658+00:00 [heartbeat] started
+2026-06-10T04:29:48.840+00:00 [telegram] [default] starting provider (@JeeevesOpenClawTelegram2bot)
+2026-06-10T04:29:49.463+00:00 [telegram] menu text exceeded the conservative 5700-character payload budget; shortening descriptions to keep 94 commands visible.
+2026-06-10T04:29:49.826+00:00 [telegram] [diag] isolated polling ingress started spool=/tmp/cap/state-v3/telegram/ingress-spool-default
+2026-06-10T04:29:54.813+00:00 [gateway] provider auth state pre-warmed in 1170ms eventLoopMax=11.3ms
+2026-06-10T04:29:58.534+00:00 [gateway] agent runtime plugins pre-warmed in 5ms
+2026-06-10T04:33:50.541+00:00 [telegram] Inbound message telegram:group:-1003900553563:topic:92 -> @JeeevesOpenClawTelegram2bot (group, 346 chars)
+2026-06-10T04:33:51.933+00:00 [agent/cli-backend] workspace bootstrap file AGENTS.md is 35678 chars (limit 20000); truncating in injected context (sessionKey=agent:main:telegram:group:-1003900553563:topic:92)
+2026-06-10T04:33:51.980+00:00 [agents/tool-policy] tool policy removed 5 tool(s) via tools.profile (coding): agents_list, gateway, message, nodes, tts
+2026-06-10T04:33:52.035+00:00 [agent/cli-backend] cli exec: provider=claude-cli model=claude-sonnet-4-6 promptChars=1488 trigger=user useResume=false session=none resumeSession=none reuse=none historyPrompt=none
+2026-06-10T04:33:52.044+00:00 [agent/cli-backend] claude live session start: provider=claude-cli model=claude-sonnet-4-6 activeSessions=1
+2026-06-10T04:33:52.914+00:00 [agents/tool-policy] tool policy removed 5 tool(s) via tools.profile (coding): agents_list, gateway, message, nodes, tts
+2026-06-10T04:33:55.991+00:00 [agent/cli-backend] claude live session turn failed: provider=claude-cli model=claude-sonnet-4-6 durationMs=3946 error=FailoverError
+2026-06-10T04:33:56.008+00:00 [model-fallback/decision] model fallback decision: decision=candidate_failed requested=claude-cli/claude-sonnet-4-6 candidate=claude-cli/claude-sonnet-4-6 reason=auth next=none detail=Failed to authenticate. API Error: 401 Invalid authentication credentials
+2026-06-10T04:33:56.010+00:00 Embedded agent failed before reply: Failed to authenticate. API Error: 401 Invalid authentication credentials
+2026-06-10T04:43:05.642+00:00 [telegram] Inbound message telegram:group:-1003900553563:topic:94 -> @JeeevesOpenClawTelegram2bot (group, 346 chars)
+2026-06-10T04:43:06.088+00:00 [agent/cli-backend] workspace bootstrap file AGENTS.md is 35678 chars (limit 20000); truncating in injected context (sessionKey=agent:main:telegram:group:-1003900553563:topic:94)
+2026-06-10T04:43:06.134+00:00 [agents/tool-policy] tool policy removed 5 tool(s) via tools.profile (coding): agents_list, gateway, message, nodes, tts
+2026-06-10T04:43:06.156+00:00 [agent/cli-backend] cli exec: provider=claude-cli model=claude-sonnet-4-6 promptChars=1488 trigger=user useResume=false session=none resumeSession=none reuse=none historyPrompt=none
+2026-06-10T04:43:06.164+00:00 [agent/cli-backend] claude live session start: provider=claude-cli model=claude-sonnet-4-6 activeSessions=2
+2026-06-10T04:43:06.908+00:00 [agents/tool-policy] tool policy removed 5 tool(s) via tools.profile (coding): agents_list, gateway, message, nodes, tts
+2026-06-10T04:43:16.029+00:00 [agent/cli-backend] claude live session turn: provider=claude-cli model=claude-sonnet-4-6 durationMs=9863 rawLines=61 outBytes=10 outHash=3e3dbb8cd7ed
+2026-06-10T04:43:17.061+00:00 [telegram] outbound send ok accountId=default chatId=-1003900553563 messageId=96 operation=sendMessage deliveryKind=text threadId=94 chunkCount=1
+2026-06-10T04:43:17.779+00:00 [agents/tool-policy] tool policy removed 5 tool(s) via tools.profile (coding): agents_list, gateway, message, nodes, tts
+2026-06-10T04:43:17.780+00:00 [agent/cli-backend] cli session reset: provider=claude-cli reason=system-prompt
+2026-06-10T04:43:17.803+00:00 [agent/cli-backend] cli exec: provider=claude-cli model=claude-sonnet-4-6 promptChars=1273 trigger=heartbeat useResume=false session=none resumeSession=none reuse=invalidated:system-prompt historyPrompt=present
+2026-06-10T04:43:17.806+00:00 [agent/cli-backend] claude live session close: provider=claude-cli model=claude-sonnet-4-6 reason=restart
+2026-06-10T04:43:17.813+00:00 [agent/cli-backend] claude live session start: provider=claude-cli model=claude-sonnet-4-6 activeSessions=2
+2026-06-10T04:43:18.492+00:00 [agents/tool-policy] tool policy removed 5 tool(s) via tools.profile (coding): agents_list, gateway, message, nodes, tts
+2026-06-10T04:43:23.186+00:00 [agent/cli-backend] claude live session turn: provider=claude-cli model=claude-sonnet-4-6 durationMs=5371 rawLines=35 outBytes=57 outHash=5170833b1032
+2026-06-10T04:43:23.339+00:00 [telegram] outbound send ok accountId=default chatId=-1003900553563 messageId=97 operation=sendMessage deliveryKind=text threadId=94 chunkCount=1
+2026-06-10T04:43:56.207+00:00 [agent/cli-backend] claude live session close: provider=claude-cli model=claude-sonnet-4-6 reason=idle
