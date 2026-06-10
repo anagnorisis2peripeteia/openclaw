@@ -1,0 +1,40 @@
+$ node scripts/run-node.mjs gateway --port 18789 --allow-unconfigured
+2026-06-10T02:26:07.603+00:00 [gateway] loading configuration…
+2026-06-10T02:26:07.663+00:00 [gateway] resolving authentication…
+2026-06-10T02:26:07.678+00:00 [gateway] starting...
+2026-06-10T02:26:13.588+00:00 [gateway] starting HTTP server...
+2026-06-10T02:26:13.629+00:00 [health-monitor] started (interval: 300s, startup-grace: 60s, channel-connect-grace: 120s)
+2026-06-10T02:26:14.055+00:00 [gateway] agent model: claude-cli/claude-sonnet-4-6 (thinking=low, fast=off)
+2026-06-10T02:26:14.056+00:00 [gateway] http server listening (8 plugins: acpx, canvas, device-pair, file-transfer, memory-core, phone-control, talk-voice, telegram; 6.4s)
+2026-06-10T02:26:14.056+00:00 [gateway] log file: /tmp/openclaw/openclaw-2026-06-10.log
+2026-06-10T02:26:14.058+00:00 [gateway] starting channels and sidecars...
+2026-06-10T02:26:14.123+00:00 [plugins] embedded acpx runtime backend registered lazily
+2026-06-10T02:26:14.135+00:00 [gateway] ready
+2026-06-10T02:26:14.224+00:00 [heartbeat] started
+2026-06-10T02:26:14.345+00:00 [telegram] [default] starting provider (@JeeevesOpenClawTelegram2bot)
+2026-06-10T02:26:14.728+00:00 [telegram] menu text exceeded the conservative 5700-character payload budget; shortening descriptions to keep 94 commands visible.
+2026-06-10T02:26:14.956+00:00 [telegram] [diag] isolated polling ingress started spool=/tmp/cap/state-before-83738v2/telegram/ingress-spool-default
+2026-06-10T02:26:20.171+00:00 [gateway] provider auth state pre-warmed in 956ms eventLoopMax=11.4ms
+2026-06-10T02:26:24.139+00:00 [gateway] agent runtime plugins pre-warmed in 5ms
+2026-06-10T02:26:52.516+00:00 [telegram] Inbound message telegram:group:-1003900553563:topic:85 -> @JeeevesOpenClawTelegram2bot (group, 235 chars)
+2026-06-10T02:26:53.868+00:00 [agent/cli-backend] workspace bootstrap file AGENTS.md is 35678 chars (limit 20000); truncating in injected context (sessionKey=agent:main:telegram:group:-1003900553563:topic:85)
+2026-06-10T02:26:53.932+00:00 [agents/tool-policy] tool policy removed 5 tool(s) via tools.profile (coding): agents_list, gateway, message, nodes, tts
+2026-06-10T02:26:54.012+00:00 [agent/cli-backend] cli exec: provider=claude-cli model=claude-sonnet-4-6 promptChars=1382 trigger=user useResume=false session=none resumeSession=none reuse=none historyPrompt=none
+2026-06-10T02:26:54.023+00:00 [agent/cli-backend] claude live session start: provider=claude-cli model=claude-sonnet-4-6 activeSessions=1
+2026-06-10T02:26:54.957+00:00 [agents/tool-policy] tool policy removed 5 tool(s) via tools.profile (coding): agents_list, gateway, message, nodes, tts
+2026-06-10T02:27:03.517+00:00 [agent/cli-backend] workspace bootstrap file AGENTS.md is 35678 chars (limit 20000); truncating in injected context (sessionKey=agent:main:main)
+2026-06-10T02:27:03.559+00:00 [agents/tool-policy] tool policy removed 5 tool(s) via tools.profile (coding): agents_list, gateway, message, nodes, tts
+2026-06-10T02:27:05.779+00:00 [agent/cli-backend] claude live session turn: provider=claude-cli model=claude-sonnet-4-6 durationMs=11753 rawLines=48 outBytes=10 outHash=3e3dbb8cd7ed
+2026-06-10T02:27:05.782+00:00 [agent/cli-backend] cli exec: provider=claude-cli model=claude-sonnet-4-6 promptChars=469 trigger=heartbeat useResume=false session=none resumeSession=none reuse=none historyPrompt=none
+2026-06-10T02:27:05.788+00:00 [agent/cli-backend] claude live session start: provider=claude-cli model=claude-sonnet-4-6 activeSessions=2
+2026-06-10T02:27:06.514+00:00 [agents/tool-policy] tool policy removed 5 tool(s) via tools.profile (coding): agents_list, gateway, message, nodes, tts
+2026-06-10T02:27:06.677+00:00 [telegram] outbound send ok accountId=default chatId=-1003900553563 messageId=87 operation=sendMessage deliveryKind=text threadId=85 chunkCount=1
+2026-06-10T02:27:08.981+00:00 [agent/cli-backend] claude live session turn: provider=claude-cli model=claude-sonnet-4-6 durationMs=3191 rawLines=13 outBytes=12 outHash=084217f1af40
+2026-06-10T02:34:13.398+00:00 [gateway] signal SIGTERM received
+2026-06-10T02:34:13.400+00:00 [gateway] received SIGTERM; shutting down
+[ELIFECYCLE] Command failed.
+2026-06-10T02:34:13.488+00:00 [shutdown] started: gateway stopping
+2026-06-10T02:34:13.891+00:00 [gateway] signal SIGTERM received
+2026-06-10T02:34:13.892+00:00 [gateway] received SIGTERM during shutdown; ignoring
+2026-06-10T02:34:13.957+00:00 [gmail-watcher] gmail watcher stopped
+2026-06-10T02:34:13.962+00:00 [shutdown] completed cleanly in 473ms
