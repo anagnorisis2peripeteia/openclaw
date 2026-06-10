@@ -1,0 +1,28 @@
+$ node scripts/run-node.mjs gateway --port 18789 --allow-unconfigured
+2026-06-10T20:44:59.767+00:00 [gateway] loading configuration…
+2026-06-10T20:44:59.831+00:00 [gateway] resolving authentication…
+2026-06-10T20:44:59.841+00:00 [gateway] auth mode=none explicitly configured; all gateway connections are unauthenticated.
+2026-06-10T20:44:59.848+00:00 [gateway] starting...
+2026-06-10T20:45:00.790+00:00 [secrets] [SECRETS_REF_IGNORED_INACTIVE_SURFACE] channels.telegram.botToken: no enabled Telegram surface inherits this top-level botToken (tokenFile is configured).
+2026-06-10T20:45:01.091+00:00 [gateway] starting HTTP server...
+2026-06-10T20:45:01.131+00:00 [health-monitor] started (interval: 300s, startup-grace: 60s, channel-connect-grace: 120s)
+2026-06-10T20:45:01.387+00:00 [gateway] agent model: claude-cli/claude-sonnet-4-6 (thinking=low, fast=off)
+2026-06-10T20:45:01.388+00:00 [gateway] http server listening (7 plugins: acpx, canvas, device-pair, file-transfer, memory-core, phone-control, talk-voice; 1.5s)
+2026-06-10T20:45:01.389+00:00 [gateway] log file: /tmp/openclaw/openclaw-2026-06-10.log
+2026-06-10T20:45:01.391+00:00 [gateway] starting channels and sidecars...
+2026-06-10T20:45:01.400+00:00 [plugins] embedded acpx runtime backend registered lazily
+2026-06-10T20:45:02.064+00:00 [gateway] ready
+2026-06-10T20:45:02.135+00:00 [heartbeat] started
+2026-06-10T20:45:10.815+00:00 [gateway] device pairing auto-approved device=93fb70d4fe75c82cc22f03e0665bc61bd2279968052e9940d49d94ced088a46a role=operator
+2026-06-10T20:45:11.095+00:00 [gateway] provider auth state pre-warmed in 1233ms eventLoopMax=108.7ms
+2026-06-10T20:45:12.664+00:00 [agent/cli-backend] workspace bootstrap file AGENTS.md is 36240 chars (limit 20000); truncating in injected context (sessionKey=agent:main:local:thread1)
+2026-06-10T20:45:12.776+00:00 [agents/tool-policy] tool policy removed 5 tool(s) via tools.profile (coding): agents_list, gateway, message, nodes, tts
+2026-06-10T20:45:12.863+00:00 [agent/cli-backend] cli exec: provider=claude-cli model=claude-sonnet-4-6 promptChars=458 trigger=heartbeat useResume=false session=none resumeSession=none reuse=none historyPrompt=none
+2026-06-10T20:45:12.872+00:00 [agent/cli-backend] claude live session start: provider=claude-cli model=claude-sonnet-4-6 activeSessions=1
+2026-06-10T20:45:13.364+00:00 [agents/tool-policy] tool policy removed 5 tool(s) via tools.profile (coding): agents_list, gateway, message, nodes, tts
+2026-06-10T20:45:14.869+00:00 [gateway] agent runtime plugins pre-warmed in 76ms
+2026-06-10T20:45:15.240+00:00 [agent/cli-backend] claude live session turn: provider=claude-cli model=claude-sonnet-4-6 durationMs=2366 rawLines=12 outBytes=7 outHash=a5133050af3a
+2026-06-10T20:45:46.499+00:00 [agents/tool-policy] tool policy removed 5 tool(s) via tools.profile (coding): agents_list, gateway, message, nodes, tts
+2026-06-10T20:45:46.520+00:00 [agent/cli-backend] cli exec: provider=claude-cli model=claude-sonnet-4-6 promptChars=504 trigger=heartbeat useResume=true session=present resumeSession=1b22992cb50d reuse=reusable historyPrompt=present
+2026-06-10T20:45:46.527+00:00 [agent/cli-backend] claude live session reuse: provider=claude-cli model=claude-sonnet-4-6
+2026-06-10T20:45:48.141+00:00 [agent/cli-backend] claude live session turn: provider=claude-cli model=claude-sonnet-4-6 durationMs=1613 rawLines=11 outBytes=16 outHash=73fa2d591c06
