@@ -1644,12 +1644,23 @@ export async function runAgentTurnWithFallback(params: {
         cfg: runtimeConfig,
         sessionKey: params.sessionKey,
         sessionEntry: echoEntryForStreaming,
+        // Origin = the channel that triggered THIS turn. Prefer the current
+        // turn's explicit origin (OriginatingChannel/To — set for webchat
+        // chat.send and any caller that does not claim the session's `last*`)
+        // over the session's `last*`, which is only fresh for channel inbounds
+        // that update it. Without this, a webchat-origin turn inherits the stale
+        // `last*` of the previously-active channel; if that channel is also a
+        // pinned echo target it gets self-excluded and the mirror silently falls
+        // back to the flat post-hoc echo instead of a native streaming render.
+        // `last*` remains the fallback so channel-origin turns are unchanged.
         originChannel:
+          params.sessionCtx.OriginatingChannel ??
           echoEntryForStreaming.lastChannel ??
           echoEntryForStreaming.channel ??
           params.sessionCtx.Provider ??
           "",
-        originTo: echoEntryForStreaming.lastTo ?? "",
+        originTo:
+          params.sessionCtx.OriginatingTo ?? echoEntryForStreaming.lastTo ?? "",
         originAccountId: echoEntryForStreaming.lastAccountId,
         originThreadId: echoEntryForStreaming.lastThreadId,
       });
