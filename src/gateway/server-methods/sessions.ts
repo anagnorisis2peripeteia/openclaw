@@ -71,7 +71,10 @@ import {
   measureDiagnosticsTimelineSpanSync,
 } from "../../infra/diagnostics-timeline.js";
 import { formatErrorMessage } from "../../infra/errors.js";
-import { normalizeEchoTargetId } from "../../infra/outbound/echo.js";
+import {
+  normalizeEchoTargetId,
+  targetMatchesSessionParticipant,
+} from "../../infra/outbound/echo.js";
 import { patchPluginSessionExtension } from "../../plugins/host-hook-state.js";
 import { isPluginJsonValue } from "../../plugins/host-hooks.js";
 import {
@@ -2312,6 +2315,7 @@ export const sessionsHandlers: GatewayRequestHandlers = {
 
     let changed = false;
     let atLimit = false;
+    let notParticipant = false;
     const MAX_ECHO_TARGETS = 16;
     const updated = await updateSessionStore(storePath, (store) => {
       const { primaryKey } = migrateAndPruneGatewaySessionStoreKey({
@@ -2327,6 +2331,13 @@ export const sessionsHandlers: GatewayRequestHandlers = {
       const existing = entry.echoTargets ?? [];
 
       if (action === "add") {
+        // A mirror recipient must be a verified participant of this session, not
+        // an arbitrary chat id. Anything that is not the session's known bound
+        // thread is rejected; opt other threads in with /pin from that thread.
+        if (!targetMatchesSessionParticipant(entry, { channel: p.channel!, to: p.to!, accountId: p.accountId, threadId: p.threadId })) {
+          notParticipant = true;
+          return entry;
+        }
         if (existing.length >= MAX_ECHO_TARGETS) {
           atLimit = true;
           return entry;
@@ -2384,6 +2395,17 @@ export const sessionsHandlers: GatewayRequestHandlers = {
         false,
         undefined,
         errorShape(ErrorCodes.INVALID_REQUEST, `Session not found: ${key}`),
+      );
+      return;
+    }
+    if (notParticipant) {
+      respond(
+        false,
+        undefined,
+        errorShape(
+          ErrorCodes.INVALID_REQUEST,
+          "Echo target must be a thread bound to this session. Use /pin from the target thread to opt it in.",
+        ),
       );
       return;
     }

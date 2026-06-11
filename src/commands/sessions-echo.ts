@@ -2,7 +2,7 @@ import { theme } from "../../packages/terminal-core/src/theme.js";
 import { getRuntimeConfig } from "../config/config.js";
 import { patchSessionEntry } from "../config/sessions.js";
 import type { SessionEchoTarget, SessionEntry } from "../config/sessions/types.js";
-import { normalizeEchoTargetId } from "../infra/outbound/echo.js";
+import { normalizeEchoTargetId, targetMatchesSessionParticipant } from "../infra/outbound/echo.js";
 import { type RuntimeEnv, writeRuntimeJson } from "../runtime.js";
 import { resolveSessionStoreTargetsOrExit } from "./session-store-targets.js";
 
@@ -73,11 +73,19 @@ export async function sessionsEchoAddCommand(
   const MAX_ECHO_TARGETS = 16;
   let wasDuplicate = false;
   let wasAtLimit = false;
+  let wasNotParticipant = false;
   const result = await patchSessionEntry({
     storePath,
     sessionKey: opts.sessionKey,
     preserveActivity: true,
     update: (entry: SessionEntry) => {
+      // A mirror recipient must be a thread bound to this session, never an
+      // arbitrary chat id. Reject anything that is not the session's known
+      // participant; opt other threads in with /pin from that thread.
+      if (!targetMatchesSessionParticipant(entry, newTarget)) {
+        wasNotParticipant = true;
+        return null;
+      }
       const existing = entry.echoTargets ?? [];
       if (existing.length >= MAX_ECHO_TARGETS) {
         wasAtLimit = true;
@@ -107,13 +115,18 @@ export async function sessionsEchoAddCommand(
 
   if (opts.json) {
     writeRuntimeJson(runtime, {
-      ok: !wasAtLimit,
-      added: !wasDuplicate && !wasAtLimit,
+      ok: !wasAtLimit && !wasNotParticipant,
+      added: !wasDuplicate && !wasAtLimit && !wasNotParticipant,
       echoTargets: result.echoTargets ?? [],
     });
-    if (wasAtLimit) {
+    if (wasAtLimit || wasNotParticipant) {
       runtime.exit(1);
     }
+  } else if (wasNotParticipant) {
+    runtime.error(
+      "Echo target must be a thread bound to this session. Use /pin from the target thread to opt it in.",
+    );
+    runtime.exit(1);
   } else if (wasAtLimit) {
     runtime.error(`Echo target limit reached (max ${MAX_ECHO_TARGETS})`);
     runtime.exit(1);

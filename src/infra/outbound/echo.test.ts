@@ -2,7 +2,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ReplyPayload } from "../../auto-reply/types.js";
 import type { SessionEntry, SessionEchoTarget } from "../../config/sessions/types.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
-import { resolveEchoTargets, fireEchoDeliveries } from "./echo.js";
+import {
+  resolveEchoTargets,
+  fireEchoDeliveries,
+  targetMatchesSessionParticipant,
+} from "./echo.js";
 
 vi.mock("./deliver.js", () => ({
   deliverOutboundPayloadsInternal: vi.fn(() => Promise.resolve()),
@@ -448,5 +452,53 @@ describe("fireEchoDeliveries", () => {
         [{ text: "hello" }],
       );
     }).not.toThrow();
+  });
+});
+
+describe("targetMatchesSessionParticipant (no arbitrary chat ids)", () => {
+  const boundEntry = {
+    lastChannel: "telegram",
+    lastTo: "12345",
+    lastAccountId: "default",
+    lastThreadId: "77",
+  } as unknown as SessionEntry;
+
+  it("accepts the session's own bound participant identity", () => {
+    expect(
+      targetMatchesSessionParticipant(boundEntry, {
+        channel: "telegram",
+        to: "12345",
+        accountId: "default",
+        threadId: "77",
+      }),
+    ).toBe(true);
+  });
+
+  it("rejects a different channel / chat id / thread (arbitrary target)", () => {
+    expect(
+      targetMatchesSessionParticipant(boundEntry, { channel: "discord", to: "999" }),
+    ).toBe(false);
+    expect(
+      targetMatchesSessionParticipant(boundEntry, {
+        channel: "telegram",
+        to: "99999",
+        accountId: "default",
+        threadId: "77",
+      }),
+    ).toBe(false);
+    expect(
+      targetMatchesSessionParticipant(boundEntry, {
+        channel: "telegram",
+        to: "12345",
+        accountId: "default",
+        threadId: "88",
+      }),
+    ).toBe(false);
+  });
+
+  it("fails closed when the session has no known participant", () => {
+    expect(
+      targetMatchesSessionParticipant({} as SessionEntry, { channel: "telegram", to: "12345" }),
+    ).toBe(false);
   });
 });

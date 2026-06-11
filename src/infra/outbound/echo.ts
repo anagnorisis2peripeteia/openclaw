@@ -16,6 +16,31 @@ export function normalizeEchoTargetId(channel: string, to: string): string {
   return trimmed;
 }
 
+// A mirror recipient must be a thread that is actually bound to the session it
+// mirrors — never an arbitrary chat id. The session entry's last* fields record
+// the most recent thread that drove this session, which is the one destination
+// we can verify routes here (it just did). Operator add paths use this to reject
+// arbitrary targets; in-chat /pin captures these same fields from its own
+// context so it is always a participant. (There is no reverse index of every
+// thread ever bound, so this verifies against the known participant and fails
+// closed — use /pin from the target thread for any other thread.)
+export function targetMatchesSessionParticipant(
+  entry: SessionEntry,
+  target: { channel: string; to: string; accountId?: string; threadId?: string | number },
+): boolean {
+  const participantChannel = entry.lastChannel ?? entry.channel;
+  if (!participantChannel || !entry.lastTo) {
+    return false;
+  }
+  const sameChannel = target.channel === participantChannel;
+  const sameTo =
+    normalizeEchoTargetId(target.channel, target.to) ===
+    normalizeEchoTargetId(participantChannel, entry.lastTo);
+  const sameAccount = (target.accountId ?? "") === (entry.lastAccountId ?? "");
+  const sameThread = String(target.threadId ?? "") === String(entry.lastThreadId ?? "");
+  return sameChannel && sameTo && sameAccount && sameThread;
+}
+
 const log = createSubsystemLogger("outbound/echo");
 
 export type EchoDeliveryContext = {
