@@ -46,7 +46,8 @@ export function registerTelegramEchoRenderer(
     if (!account?.token) {
       return undefined;
     }
-    if (resolveTelegramStreamMode(account.config) === "off") {
+    const streamMode = resolveTelegramStreamMode(account.config);
+    if (streamMode === "off") {
       return undefined;
     }
     const client = resolveTelegramClientOptions(account);
@@ -63,6 +64,8 @@ export function registerTelegramEchoRenderer(
       thread,
       cfg,
       accountId: account.accountId,
+      streamingEntry: account.config,
+      streamMode,
       textLimit,
     });
   });
