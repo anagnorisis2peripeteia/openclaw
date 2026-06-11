@@ -332,7 +332,7 @@ function resolveAnthropicFixedContextWindow(provider: string, model: string): nu
   ) {
     return ANTHROPIC_FABLE_CONTEXT_TOKENS;
   }
-  if (provider !== "anthropic" && provider !== "claude-cli") {
+  if (provider !== "anthropic" && !isClaudeCliCompatibleBackend(provider)) {
     return undefined;
   }
   return ANTHROPIC_GA_1M_MODEL_PREFIXES.some((prefix) => modelId.startsWith(prefix))

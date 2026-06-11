@@ -13,10 +13,6 @@ import type { AgentEventPayload } from "../../infra/agent-events.js";
 import { emitAgentEvent, onAgentEvent } from "../../infra/agent-events.js";
 import { formatToolAggregate } from "../tool-meta.js";
 
-function isClaudeCliProvider(provider: string): boolean {
-  return normalizeLowercaseStringOrEmpty(provider) === "claude-cli";
-}
-
 // Bridge CLI assistant-text deliveries onto the reasoning channel for any
 // Claude CLI variant. With adaptive thinking (Opus 4.6+), the upstream API
 // returns redacted thinking blocks — signatures only, no thinking_delta
