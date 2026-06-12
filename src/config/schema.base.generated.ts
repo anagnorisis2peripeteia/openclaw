@@ -809,6 +809,10 @@ export const GENERATED_BASE_CONFIG_SCHEMA: BaseConfigSchemaResponse = {
                       type: "string",
                       const: "existing-session",
                     },
+                    {
+                      type: "string",
+                      const: "extension",
+                    },
                   ],
                   title: "Browser Profile Driver",
                   description:
@@ -21527,6 +21531,30 @@ export const GENERATED_BASE_CONFIG_SCHEMA: BaseConfigSchemaResponse = {
                 title: "Gateway Tool Allowlist",
                 description:
                   "Explicit gateway-level tool allowlist when you want a narrow set of tools available at runtime. Use this for locked-down environments where tool scope must be tightly controlled.",
+              },
+              byClientId: {
+                type: "object",
+                propertyNames: {
+                  type: "string",
+                },
+                additionalProperties: {
+                  type: "object",
+                  properties: {
+                    allow: {
+                      type: "array",
+                      items: {
+                        type: "string",
+                      },
+                    },
+                    deny: {
+                      type: "array",
+                      items: {
+                        type: "string",
+                      },
+                    },
+                  },
+                  additionalProperties: false,
+                },
               },
             },
             additionalProperties: false,
