@@ -83,6 +83,7 @@ import {
 } from "../protocol/index.js";
 import { CHAT_SEND_SESSION_KEY_MAX_LENGTH } from "../protocol/schema/primitives.js";
 import { getMaxChatHistoryMessagesBytes } from "../server-constants.js";
+import { setSessionOperatorClientId } from "../session-client-id-registry.js";
 import {
   capArrayByJsonBytes,
   loadSessionEntry,
@@ -2279,6 +2280,11 @@ export const chatHandlers: GatewayRequestHandlers = {
         ? [systemProvenanceReceipt, parsedMessage].filter(Boolean).join("\n\n")
         : parsedMessage;
       const clientInfo = client?.connect?.client;
+      // Record the connecting client's id against this session so the loopback
+      // MCP tool resolver (which only sees the session key) can apply
+      // gateway.tools.byClientId restrictions for this turn. Restriction-only:
+      // a client can at most narrow its own toolset, so the value is untrusted.
+      setSessionOperatorClientId(sessionKey, clientInfo?.id);
       const {
         originatingChannel,
         originatingTo,

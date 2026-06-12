@@ -68,6 +68,14 @@ struct GeneralSettings: View {
                         binding: self.$state.peekabooBridgeEnabled)
 
                     SettingsToggleRow(
+                        title: "Browser Control: My Browser (extension)",
+                        subtitle: "Let the agent drive your real Chrome via the bundled OpenClaw extension "
+                            + "instead of a managed browser.",
+                        binding: self.$state.myBrowserEnabled)
+
+                    self.myBrowserStatusLine
+
+                    SettingsToggleRow(
                         title: "Enable debug tools",
                         subtitle: "Show the Debug tab with development utilities.",
                         binding: self.$state.debugPaneEnabled)
@@ -99,6 +107,25 @@ struct GeneralSettings: View {
         Binding(
             get: { !self.state.isPaused },
             set: { self.state.isPaused = !$0 })
+    }
+
+    /// Status line for "My Browser" mode.
+    ///
+    /// TODO(browser-extension): there is currently no gateway RPC that reports
+    /// whether the bundled extension has connected to the local browser-control
+    /// bridge. Once the core feature (TS side) exposes such a status (e.g. a
+    /// `browser.status` method on `GatewayConnection`, or a field on the
+    /// existing health/status snapshot), surface "connected" vs "waiting for
+    /// extension" here. Until then we only echo the configured mode.
+    @ViewBuilder
+    private var myBrowserStatusLine: some View {
+        if self.state.myBrowserEnabled {
+            Text("My Browser: waiting for extension (connect the OpenClaw extension in Chrome)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.leading, 2)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     private var connectionSection: some View {

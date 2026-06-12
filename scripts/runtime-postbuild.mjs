@@ -31,6 +31,13 @@ export const STATIC_EXTENSION_ASSETS = [
     src: "extensions/diffs/assets/viewer-runtime.js",
     dest: "dist/extensions/diffs/assets/viewer-runtime.js",
   },
+  // Chrome browser-copilot extension — shipped bundled + version-matched so the
+  // tray app can hand the user a load path without a manual "load unpacked".
+  // This is a DIRECTORY; copyStaticExtensionAssets copies it recursively.
+  {
+    src: "extensions/chrome-extension",
+    dest: "dist/extensions/chrome-extension",
+  },
 ];
 
 export function listStaticExtensionAssetOutputs(params = {}) {
@@ -49,8 +56,14 @@ export function copyStaticExtensionAssets(params = {}) {
     const srcPath = path.join(rootDir, src);
     const destPath = path.join(rootDir, dest);
     if (fsImpl.existsSync(srcPath)) {
-      fsImpl.mkdirSync(path.dirname(destPath), { recursive: true });
-      fsImpl.copyFileSync(srcPath, destPath);
+      if (fsImpl.statSync(srcPath).isDirectory()) {
+        // copy the whole folder (e.g. the bundled chrome-extension)
+        fsImpl.mkdirSync(destPath, { recursive: true });
+        fsImpl.cpSync(srcPath, destPath, { recursive: true, force: true });
+      } else {
+        fsImpl.mkdirSync(path.dirname(destPath), { recursive: true });
+        fsImpl.copyFileSync(srcPath, destPath);
+      }
     } else {
       warn(`[runtime-postbuild] static asset not found, skipping: ${src}`);
     }
