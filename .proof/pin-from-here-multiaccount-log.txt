@@ -1,0 +1,6 @@
+2026-06-13T11:37:46.146+00:00 [diagnostic] message dispatch started: channel=telegram sessionId=unknown sessionKey=agent:main:telegram:group:-1004389798714:topic:1 source=replyResolver
+2026-06-13T11:37:46.349+00:00 [telegram] sendMessage ok chat=-1004389798714 message=16
+2026-06-13T11:37:46.352+00:00 [diagnostic] message dispatch completed: channel=telegram sessionId=unknown sessionKey=agent:main:telegram:group:-1004389798714:topic:1 source=replyResolver outcome=completed duration=206ms
+2026-06-13T11:39:54.061+00:00 [diagnostic] message received: channel=webchat chatId=unknown messageId=ma-1781350794023 sessionId=unknown sessionKey=agent:main:telegram:group:-1004389798714:topic:1 source=dispatchInboundMessage
+2026-06-13T11:39:57.126+00:00 [diagnostic] message dispatch started: channel=telegram sessionId=unknown sessionKey=agent:main:telegram:group:-1004389798714:topic:1 source=replyResolver
+2026-06-13T11:39:57.298+00:00 [diagnostic] message dispatch completed: channel=telegram sessionId=unknown sessionKey=agent:main:telegram:group:-1004389798714:topic:1 source=replyResolver outcome=completed duration=172ms
