@@ -1,0 +1,41 @@
+=== PIN-FROM-HERE DESTINATION REVOCATION — LIVE PROOF (current head 99773b7 + fix 083338a) ===
+Real Telegram forum supergroup, pinned via a genuine /pin on command (tdlib user-driver). Mock backend for determinism. IDs are the test groups bot #2 is admin of.
+
+----- RUN OUTPUT (hot-reload disable) -----
+[2] CONTROL drive (ENABLED) — expect mirror DELIVERS
+[2] settle 16s (let any delayed deliveries land)
+[2] sends-to-GID after control: 2
+[2] last bot msg id in group: 444596224
+[3] DISABLE group (hot-reload) + settle
+2026-06-14T02:44:07.867+00:00 [reload] config hot reload applied (channels.telegram.groups.-1003900553563.enabled)
+[4] REVOCATION drive (DISABLED) — expect NO new delivery
+[4] sends-to-GID after revoke: 2
+[4] driver observe: any NEW bot msg in group after revoke (expect TIMEOUT)?
+[4] observe result: NO_NEW_MESSAGE (timeout)
+===VERDICT===
+control sends=2  revoke-added sends=0
+-- block lines (if any) --
+DONE_REVPROOF3
+
+----- GATEWAY LOG: control mirror delivers (group ENABLED) -----
+2026-06-14T02:43:45.449 [telegram] outbound send ok chatId=-1003900553563 messageId=425   <- reply lands in the group
+2026-06-14T02:43:45.461 [diagnostic] message received: channel=telegram messageId=0 ... group:-1003900553563:topic:1 source=dispatchInboundMessage   <- native mirror
+
+----- GATEWAY LOG: disable + echo SUPPRESSED (group DISABLED) -----
+2026-06-14T02:44:07.867+00:00 [reload] config hot reload applied (channels.telegram.groups.-1003900553563.enabled)
+2026-06-14T02:44:19.454+00:00 [outbound/echo] Echo delivery suppressed for telegram:telegram:-1003900553563 (destination disabled/revoked)
+
+----- RESTART-DISABLE path (independent confirmation) -----
+[B] RESTART with group DISABLED
+[B] confirm echoTarget loaded on restart:
+  echoTargets: True
+[B] REVOKE drive (group disabled) — expect NO delivery
+[B] sends to GID in disabled run: 0
+[B] driver observe after revoke: NO_NEW_MESSAGE (revocation worked)
+===VERDICT_RESTART_DISABLE===
+[B] block lines:
+2026-06-14T02:46:12.317+00:00 [outbound/echo] Echo delivery suppressed for telegram:telegram:-1003900553563 (destination disabled/revoked)
+[B] mirror fan-out attempted (synthetic inbound messageId=0)?
+0
+DONE_REVPROOF4
+2026-06-14T02:46:12.317+00:00 [outbound/echo] Echo delivery suppressed for telegram:telegram:-1003900553563 (destination disabled/revoked)
