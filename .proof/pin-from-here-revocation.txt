@@ -39,3 +39,17 @@ DONE_REVPROOF3
 0
 DONE_REVPROOF4
 2026-06-14T02:46:12.317+00:00 [outbound/echo] Echo delivery suppressed for telegram:telegram:-1003900553563 (destination disabled/revoked)
+
+==== DIRECT-DM REVOCATION (live, dmPolicy open -> disabled) ====
+Driver (Cameron, real account) DMs bot #2, /pin on in the DM, webchat drives the turn.
+
+----- CONTROL (dmPolicy OPEN): authorized DM mirrors -----
+[A] pinned DM session: agent:main:main
+[A] control sends to Cameron DM: 1
+----- REVOKE (dmPolicy DISABLED): DM receives nothing -----
+[B] RESTART dmPolicy=disabled (DM access revoked)
+[B] sends to Cameron DM after revoke: 0
+[B] driver observe: NO_NEW_MESSAGE (DM revocation worked)
+===VERDICT_DM===
+2026-06-14T09:39:46.740+00:00 [outbound/echo] Echo delivery suppressed for telegram:telegram:8661849123 (destination disabled/revoked)
+DONE_REVPROOF_DM
