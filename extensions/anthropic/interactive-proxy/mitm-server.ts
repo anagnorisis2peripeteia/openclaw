@@ -281,6 +281,14 @@ export async function startMitmProxy(certs: CertPaths): Promise<MitmProxyHandle>
         requestType = classifyRequest(reqBody, classifyState);
       }
       const reqId = nextReqId++;
+      // Surface client-side tool_result blocks (claude executes tools locally and
+      // echoes results in the NEXT request body, NOT in the assistant SSE) so the
+      // wrapper can re-emit them as stream-json `user` lines — matching native
+      // `claude -p --output-format stream-json`. Without this, OpenClaw's verbose
+      // tool-summary tracker never sees a tool result and tool summaries are lost.
+      if (reqBody !== undefined) {
+        emitEvent({ type: "interactive_request_body", _reqId: reqId, body: reqBody });
+      }
 
       let upstream: Response;
       try {

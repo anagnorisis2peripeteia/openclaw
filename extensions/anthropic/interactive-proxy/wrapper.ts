@@ -689,8 +689,35 @@ async function main(): Promise<void> {
     }, 15000);
   };
 
+  // tool_use_ids already surfaced as stream-json `user` tool_result lines (dedup).
+  const emittedToolResultIds = new Set<string>();
   proxy.onEvent((evt) => {
     const eventType = evt.type as string;
+    if (eventType === "interactive_request_body") {
+      try {
+        const parsedReq = typeof evt.body === "string" ? JSON.parse(evt.body as string) : evt.body;
+        const msgs = (parsedReq as { messages?: unknown[] } | undefined)?.messages;
+        if (Array.isArray(msgs)) {
+          for (const m of msgs) {
+            const content = (m as { content?: unknown })?.content;
+            if (Array.isArray(content)) {
+              for (const c of content) {
+                const blk = c as { type?: string; tool_use_id?: string };
+                if (
+                  blk?.type === "tool_result" &&
+                  typeof blk.tool_use_id === "string" &&
+                  !emittedToolResultIds.has(blk.tool_use_id)
+                ) {
+                  emittedToolResultIds.add(blk.tool_use_id);
+                  emit(JSON.stringify({ type: "user", message: { role: "user", content: [blk] } }));
+                }
+              }
+            }
+          }
+        }
+      } catch {}
+      return;
+    }
     // Synthetic event emitted by mitm-server when /v1/messages returns a
     // non-SSE 4xx/5xx (rate limit, billing, auth, overloaded, etc.). It carries
     // _reqId / _requestType so termination can be scoped to the user-facing
