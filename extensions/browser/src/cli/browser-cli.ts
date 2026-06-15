@@ -48,6 +48,7 @@ const browserCommandGroupDefinitions: readonly BrowserCommandGroupDefinition[] =
       command("profiles", "List all browser profiles"),
       command("create-profile", "Create a new browser profile"),
       command("delete-profile", "Delete a browser profile"),
+      command("doctor", "Check browser plugin readiness"),
     ],
     register: async (args) => {
       const module = await import("./browser-cli-manage.js");
@@ -105,7 +106,6 @@ const browserCommandGroupDefinitions: readonly BrowserCommandGroupDefinition[] =
       command("highlight", "Highlight an element by ref"),
       command("errors", "Get recent page errors"),
       command("requests", "Get recent network requests (best-effort)"),
-      command("doctor", "Check browser plugin readiness"),
       command("trace", "Record a Playwright trace"),
     ],
     register: async (args) => {
