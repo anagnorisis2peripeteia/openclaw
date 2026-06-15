@@ -696,7 +696,12 @@ async function main(): Promise<void> {
     if (eventType === "interactive_request_body") {
       try {
         const parsedReq = typeof evt.body === "string" ? JSON.parse(evt.body as string) : evt.body;
-        const msgs = (parsedReq as { messages?: unknown[] } | undefined)?.messages;
+        const allMsgs = (parsedReq as { messages?: unknown[] } | undefined)?.messages;
+        // Only this turn's results: the latest message carries the freshly-executed
+        // tool_result(s). Iterating the full history would re-emit stale results
+        // (e.g. on a fresh proxy with an empty dedup set) as duplicate empty tool items.
+        const msgs =
+          Array.isArray(allMsgs) && allMsgs.length > 0 ? [allMsgs[allMsgs.length - 1]] : [];
         if (Array.isArray(msgs)) {
           for (const m of msgs) {
             const content = (m as { content?: unknown })?.content;
