@@ -90,6 +90,11 @@ let pendingReqs = new Map();
 let currentRunId = null;
 let streamingEl = null;
 let streamingText = "";
+// Offset into the gateway's authoritative full text where the CURRENT bubble's
+// segment begins (advanced at each tool-call boundary), and the last full text
+// seen (to detect the gateway resetting/replacing its buffer).
+let segStart = 0;
+let lastFull = "";
 let gatewayToken = "";
 let reconnectTimer = null;
 let reconnectAttempt = 0;
@@ -264,7 +269,9 @@ async function handleChallenge(payload) {
       client: { id: CLIENT_ID, version: "1.0.0", platform: "chrome-extension", mode: CLIENT_MODE },
       role: ROLE,
       scopes: SCOPES,
-      caps: [],
+      // Opt in to tool-call events so the panel can show each browser step and
+      // split inter-tool commentary into its own message.
+      caps: ["tool-events"],
       commands: [],
       device,
       auth: gatewayToken ? { token: gatewayToken } : undefined,
@@ -334,6 +341,11 @@ function handleMessage(msg) {
 
   if (msg.type === "event" && msg.event === "chat") {
     handleChatEvent(msg.payload);
+    return;
+  }
+
+  if (msg.type === "event" && msg.event === "agent") {
+    handleAgentEvent(msg.payload);
     return;
   }
 }
@@ -452,47 +464,88 @@ sessionPicker.addEventListener("change", async () => {
   addMessage("system", sessionKey ? "Session ready." : "Ready.");
 });
 
+function friendlyToolName(name) {
+  if (!name) return "tool";
+  let n = String(name)
+    .replace(/^mcp__openclaw__/, "")
+    .replace(/^mcp__[^_]+__/, "");
+  return n.replace(/_/g, " ");
+}
+
+function addStep(label) {
+  const el = document.createElement("div");
+  el.className = "msg step";
+  el.textContent = "→ " + label;
+  el.style.cssText = "font-size:11px;color:#888;font-style:italic;margin:3px 0 3px 4px;";
+  messagesEl.appendChild(el);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+// Tool-call events arrive on the "agent" channel (we opt in via the
+// `tool-events` cap). Each tool "start" is a boundary: finalize the current
+// commentary bubble and show a step line, so the assistant's pre-tool and
+// post-tool commentary become separate, persisted messages instead of one
+// run-together blob.
+function handleAgentEvent(payload) {
+  if (!payload || payload.stream !== "tool") return;
+  const data = payload.data || {};
+  if (data.phase !== "start") return;
+  if (streamingEl) streamingEl.classList.remove("streaming");
+  streamingEl = null;
+  // Post-tool commentary begins a fresh segment/bubble after this boundary.
+  segStart = lastFull.length;
+  addStep(friendlyToolName(data.toolName || data.name || (data.tool && data.tool.name)));
+}
+
 function handleChatEvent(payload) {
   if (!payload) return;
   const state = payload.state;
 
   if (state === "delta") {
-    // The gateway sends the authoritative full assistant text in
-    // message.content[0].text. Prefer it: a `replace:true` delta carries the
-    // FULL text (not an increment), and blindly `+=`-ing those was what
-    // produced the duplicated / garbled "TheThe…" output. Falling back to the
-    // replace flag (set) vs a plain incremental delta (append).
+    // Render from the gateway's AUTHORITATIVE full text (message.content[0].text)
+    // sliced from segStart — this is idempotent, so the gateway re-flushing a
+    // cumulative delta at a tool boundary can't duplicate text. The current
+    // bubble shows full.slice(segStart); tool boundaries (handleAgentEvent)
+    // advance segStart so post-tool commentary becomes a new bubble.
     const full =
       payload.message && payload.message.content && payload.message.content[0]
         ? payload.message.content[0].text
-        : undefined;
-    const text = payload.deltaText || "";
-    if (full == null && !text) return;
+        : null;
+    if (full == null) return;
 
-    // Bubble boundaries: a new run always starts a fresh bubble. A `replace`
-    // whose text DIVERGES from the current bubble is a genuinely new segment
-    // (assistant commentary resuming after a tool call) → persist the old bubble
-    // and start a new one so inter-tool commentary is kept. A `replace` that
-    // still extends/repeats the current text is just a re-broadcast/correction
-    // → update in place (otherwise we spawn duplicate bubbles).
-    const incoming = full != null ? full : text;
-    if (!streamingEl || currentRunId !== payload.runId) {
+    if (currentRunId !== payload.runId) {
       if (streamingEl) streamingEl.classList.remove("streaming");
       currentRunId = payload.runId;
-      streamingEl = addMessage("assistant", "");
-      streamingEl.classList.add("streaming");
-      streamingText = incoming;
-    } else if (payload.replace && streamingText && !incoming.startsWith(streamingText)) {
-      streamingEl.classList.remove("streaming");
-      streamingEl = addMessage("assistant", "");
-      streamingEl.classList.add("streaming");
-      streamingText = incoming;
-    } else if (full != null) {
-      streamingText = full;
-    } else {
-      streamingText += text;
+      segStart = 0;
+      lastFull = "";
+      streamingEl = null;
     }
-    streamingEl.innerHTML = renderText(streamingText);
+
+    // The gateway reset its buffer (a `replace` / non-monotonic restart) when
+    // the new full no longer extends what we last saw.
+    if (!full.startsWith(lastFull)) {
+      const curSeg = lastFull.slice(segStart);
+      if (curSeg && full.startsWith(curSeg)) {
+        // New buffer is a continuation of the CURRENT segment → keep the bubble,
+        // rebase the offset to the start of this buffer.
+        segStart = 0;
+      } else {
+        // Genuinely different content → finalize and start a fresh bubble.
+        if (streamingEl) streamingEl.classList.remove("streaming");
+        streamingEl = null;
+        segStart = 0;
+      }
+    }
+    lastFull = full;
+
+    const segText = full.slice(segStart);
+    if (!segText) return;
+    if (!streamingEl) {
+      streamingEl = addMessage("assistant", "");
+      streamingEl.classList.add("streaming");
+    }
+    streamingText = segText;
+    streamingEl.innerHTML = renderText(segText);
     messagesEl.scrollTop = messagesEl.scrollHeight;
   }
 
@@ -507,9 +560,45 @@ function handleChatEvent(payload) {
     streamingEl = null;
     streamingText = "";
     currentRunId = null;
+    segStart = 0;
+    lastFull = "";
     sendBtn.disabled = false;
     msgInput.disabled = false;
     msgInput.focus();
+  }
+}
+
+async function deliverTurn(text) {
+  // Bind to this tab's deterministic session and make sure it exists on the
+  // gateway before sending (idempotent create / resume).
+  if (!sessionKey) bindTabSession();
+  await ensureSession(sessionKey);
+  // Bind the gateway's current tab to this panel's pinned tab so the turn drives
+  // THIS tab rather than the profile-global last-touched tab.
+  await focusPinnedTab();
+  // Prefer routing THROUGH the node (node-originated agent.request) so the
+  // gateway confines this turn's tools to the hosting node's policy
+  // (gateway.tools.byNode). The reply streams back over this panel's gateway
+  // subscription on the same sessionKey. Fall back to a direct gateway turn if
+  // no node is hosting the bridge.
+  let routedThroughNode = false;
+  try {
+    const nodeRes = await chrome.runtime.sendMessage({
+      type: "nodeTurn",
+      message: text,
+      sessionKey,
+    });
+    routedThroughNode = !!(nodeRes && nodeRes.ok);
+  } catch {
+    // background/relay unavailable — fall through to a direct gateway turn.
+  }
+  if (!routedThroughNode) {
+    const result = await sendReq("sessions.send", {
+      message: text,
+      idempotencyKey: generateId(),
+      key: sessionKey,
+    });
+    if (result?.runId) currentRunId = result.runId;
   }
 }
 
@@ -525,42 +614,18 @@ async function sendMessage() {
   msgInput.disabled = true;
 
   try {
-    // Bind to this tab's deterministic session, ensure it exists on the gateway,
-    // and point the gateway's current tab at this panel's pinned tab so the turn
-    // drives THIS tab rather than the profile-global last-touched one.
-    if (!sessionKey) bindTabSession();
-    await ensureSession(sessionKey);
-    await focusPinnedTab();
-
-    const params = { message: text, idempotencyKey: generateId() };
-    if (sessionKey) {
-      params.key = sessionKey;
-    }
-    const result = await sendReq("sessions.send", params);
-    if (result?.runId) currentRunId = result.runId;
-    if (result?.sessionKey && !sessionKey) {
-      sessionKey = result.sessionKey;
-      const opt = document.createElement("option");
-      opt.value = sessionKey;
-      opt.textContent = sessionKey.split(":").pop();
-      sessionPicker.appendChild(opt);
-      sessionPicker.value = sessionKey;
-    }
+    await deliverTurn(text);
   } catch (err) {
-    // Self-heal: a keyed session that no longer exists (e.g. the gateway was
-    // restarted) fails with "session not found" — re-ensure it and retry once.
+    // Self-heal: if the keyed session went missing (e.g. the gateway was
+    // restarted), ensureSession will recreate it — retry the turn once.
     if (/session not found/i.test(err?.message || "")) {
       try {
-        const key = perTabSessionKey();
-        await ensureSession(key);
-        const result = await sendReq("sessions.send", {
-          message: text,
-          idempotencyKey: generateId(),
-          key,
-        });
-        if (result?.runId) currentRunId = result.runId;
+        await ensureSession(perTabSessionKey());
+        await deliverTurn(text);
         return;
-      } catch {}
+      } catch (err2) {
+        err = err2;
+      }
     }
     addMessage("system", "Send failed: " + (err?.message || err));
     sendBtn.disabled = false;
