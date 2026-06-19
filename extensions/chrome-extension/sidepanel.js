@@ -568,6 +568,27 @@ function handleChatEvent(payload) {
   }
 }
 
+// Live context for the model: which page the pinned tab is on RIGHT NOW. Sent
+// as a preamble on every turn so the agent knows the current URL without a
+// browser-tool round-trip — and so it won't re-navigate (reload) a page it is
+// already on. Not shown in the chat bubble (the user's own text is).
+async function tabContextPreamble() {
+  if (!pinnedTabId) return "";
+  try {
+    const tab = await chrome.tabs.get(pinnedTabId);
+    if (!tab || !tab.url) return "";
+    const title = (tab.title || "").trim();
+    return (
+      "[Browser context: the active tab is currently on " +
+      tab.url +
+      (title ? " (" + title + ")" : "") +
+      ". If the request is about this page, act on it directly — do NOT re-navigate to it (that reloads and loses state). Navigate only when a different page is needed.]\n\n"
+    );
+  } catch {
+    return "";
+  }
+}
+
 async function deliverTurn(text) {
   // Bind to this tab's deterministic session and make sure it exists on the
   // gateway before sending (idempotent create / resume).
@@ -576,6 +597,8 @@ async function deliverTurn(text) {
   // Bind the gateway's current tab to this panel's pinned tab so the turn drives
   // THIS tab rather than the profile-global last-touched tab.
   await focusPinnedTab();
+  // Force-feed the live tab context so the agent knows where it already is.
+  const sendText = (await tabContextPreamble()) + text;
   // Prefer routing THROUGH the node (node-originated agent.request) so the
   // gateway confines this turn's tools to the hosting node's policy
   // (gateway.tools.byNode). The reply streams back over this panel's gateway
@@ -585,7 +608,7 @@ async function deliverTurn(text) {
   try {
     const nodeRes = await chrome.runtime.sendMessage({
       type: "nodeTurn",
-      message: text,
+      message: sendText,
       sessionKey,
     });
     routedThroughNode = !!(nodeRes && nodeRes.ok);
@@ -594,7 +617,7 @@ async function deliverTurn(text) {
   }
   if (!routedThroughNode) {
     const result = await sendReq("sessions.send", {
-      message: text,
+      message: sendText,
       idempotencyKey: generateId(),
       key: sessionKey,
     });
