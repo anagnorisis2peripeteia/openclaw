@@ -454,8 +454,17 @@ function handleChatEvent(payload) {
   const state = payload.state;
 
   if (state === "delta") {
+    // The gateway sends the authoritative full assistant text in
+    // message.content[0].text. Prefer it: a `replace:true` delta carries the
+    // FULL text (not an increment), and blindly `+=`-ing those was what
+    // produced the duplicated / garbled "TheThe…" output. Falling back to the
+    // replace flag (set) vs a plain incremental delta (append).
+    const full =
+      payload.message && payload.message.content && payload.message.content[0]
+        ? payload.message.content[0].text
+        : undefined;
     const text = payload.deltaText || "";
-    if (!text) return;
+    if (full == null && !text) return;
 
     if (!streamingEl || currentRunId !== payload.runId) {
       currentRunId = payload.runId;
@@ -464,7 +473,9 @@ function handleChatEvent(payload) {
       streamingEl.classList.add("streaming");
     }
 
-    streamingText += text;
+    if (full != null) streamingText = full;
+    else if (payload.replace) streamingText = text;
+    else streamingText += text;
     streamingEl.innerHTML = renderText(streamingText);
     messagesEl.scrollTop = messagesEl.scrollHeight;
   }

@@ -20,6 +20,7 @@ import {
 import type { ResolvedBrowserProfile } from "./config.js";
 import { BrowserProfileUnavailableError } from "./errors.js";
 import { getBrowserProfileCapabilities } from "./profile-capabilities.js";
+import { hasCachedPlaywrightBrowserConnection } from "./pw-session.js";
 import {
   CDP_READY_AFTER_LAUNCH_MAX_TIMEOUT_MS,
   CDP_READY_AFTER_LAUNCH_MIN_TIMEOUT_MS,
@@ -108,6 +109,10 @@ export function createProfileAvailability({
       await listChromeMcpTabs(profile.name, profile);
       return true;
     }
+    // A live cached CDP connection is proof of reachability; skip the
+    // throwaway health-probe WS (it churns the bridge and times out on
+    // heavy multi-target pages). The op self-heals if the cached socket is dead.
+    if (hasCachedPlaywrightBrowserConnection(profile.cdpUrl)) return true;
     const { httpTimeoutMs, wsTimeoutMs } = resolveTimeouts(timeoutMs);
     return await isChromeCdpReady(
       profile.cdpUrl,
