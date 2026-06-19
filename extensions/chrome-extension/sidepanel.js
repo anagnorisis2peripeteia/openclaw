@@ -337,11 +337,68 @@ function handleMessage(msg) {
 
 let mainSessionKey = null;
 
+// Per-tab session isolation: each attached tab gets its OWN agent conversation
+// session, keyed DETERMINISTICALLY off the tab id so reattaching the same tab
+// (or reloading the panel) resumes the same thread. The gateway rejects an
+// unknown key on send ("session not found"), so before a tab's first send we
+// ensure the keyed session exists via sessions.create (a no-op resume if it
+// already does). No client-side storage is needed — the key IS the identity.
+function baseSessionKey() {
+  if (!mainSessionKey) return null;
+  // Thread off the base agent key, stripping any existing :thread:... suffix.
+  const i = mainSessionKey.indexOf(":thread:");
+  return i === -1 ? mainSessionKey : mainSessionKey.slice(0, i);
+}
+
+function perTabSessionKey() {
+  const base = baseSessionKey();
+  if (!base || !pinnedTabId) return base;
+  return base + ":thread:tab-" + pinnedTabId;
+}
+
+// Bind this panel to its pinned tab's deterministic session (when both the
+// gateway hello and the pinned tab are known — either can arrive first).
+function bindTabSession() {
+  const key = perTabSessionKey();
+  if (key && pinnedTabId) sessionKey = key;
+}
+
+// Idempotently ensure the keyed session exists on the gateway before sending to
+// it. sessions.create with an explicit key creates it, or resumes if present
+// (we swallow an "already exists" style error either way).
+async function ensureSession(key) {
+  if (!key) return;
+  try {
+    await sendReq("sessions.create", { key });
+  } catch (e) {
+    if (!/exist|in use|already/i.test(e?.message || "")) throw e;
+  }
+}
+
+// Bind the gateway's "current tab" to THIS panel's pinned tab right before a
+// turn, so the agent's browser tool drives this tab — not whichever tab the
+// profile happened to touch last. Uses a no-op tab focus (sets
+// profileState.lastTargetId without navigating). The pinned tab's CDP targetId
+// is resolved by the background relay (which owns the attached-tabs map).
+async function focusPinnedTab() {
+  if (!pinnedTabId) return;
+  try {
+    const r = await chrome.runtime.sendMessage({ type: "getTargetId", tabId: pinnedTabId });
+    const targetId = r && r.targetId;
+    if (targetId) {
+      await sendReq("browser.request", { method: "POST", path: "/tabs/focus", body: { targetId } });
+    }
+  } catch {
+    // Best-effort: if focus fails, the turn still runs against the default tab.
+  }
+}
+
 async function handleHelloOk(payload) {
   const snapshot = payload.snapshot || {};
   const sd = snapshot.sessionDefaults || {};
   mainSessionKey = sd.mainSessionKey || null;
-  sessionKey = mainSessionKey;
+  // Default this panel to its pinned tab's own (deterministic) session.
+  bindTabSession();
 
   try {
     const result = await sendReq("sessions.list", {});
@@ -369,13 +426,27 @@ async function handleHelloOk(payload) {
     }
   }
 
-  addMessage("system", "Connected. Select a session or start a new one.");
+  addMessage(
+    "system",
+    pinnedTabId && sessionKey
+      ? "Connected — this tab has its own session (" + sessionKey.split(":").pop() + ")."
+      : "Connected. Select a session or start a new one.",
+  );
 }
 
-sessionPicker.addEventListener("change", () => {
-  sessionKey = sessionPicker.value === "new" ? mainSessionKey : sessionPicker.value;
+sessionPicker.addEventListener("change", async () => {
+  if (sessionPicker.value === "new") {
+    // "+ New session" = a fresh start for THIS tab: keep the deterministic
+    // per-tab key but clear its thread history on the gateway (best-effort).
+    sessionKey = perTabSessionKey();
+    try {
+      await sendReq("sessions.reset", { key: sessionKey });
+    } catch {}
+  } else {
+    sessionKey = sessionPicker.value;
+  }
   messagesEl.innerHTML = "";
-  addMessage("system", sessionKey ? "Switched to session." : "Ready.");
+  addMessage("system", sessionKey ? "Session ready." : "Ready.");
 });
 
 function handleChatEvent(payload) {
@@ -427,6 +498,13 @@ async function sendMessage() {
   msgInput.disabled = true;
 
   try {
+    // Bind to this tab's deterministic session, ensure it exists on the gateway,
+    // and point the gateway's current tab at this panel's pinned tab so the turn
+    // drives THIS tab rather than the profile-global last-touched one.
+    if (!sessionKey) bindTabSession();
+    await ensureSession(sessionKey);
+    await focusPinnedTab();
+
     const params = { message: text, idempotencyKey: generateId() };
     if (sessionKey) {
       params.key = sessionKey;
@@ -442,7 +520,22 @@ async function sendMessage() {
       sessionPicker.value = sessionKey;
     }
   } catch (err) {
-    addMessage("system", "Send failed: " + err.message);
+    // Self-heal: a keyed session that no longer exists (e.g. the gateway was
+    // restarted) fails with "session not found" — re-ensure it and retry once.
+    if (/session not found/i.test(err?.message || "")) {
+      try {
+        const key = perTabSessionKey();
+        await ensureSession(key);
+        const result = await sendReq("sessions.send", {
+          message: text,
+          idempotencyKey: generateId(),
+          key,
+        });
+        if (result?.runId) currentRunId = result.runId;
+        return;
+      } catch {}
+    }
+    addMessage("system", "Send failed: " + (err?.message || err));
     sendBtn.disabled = false;
     msgInput.disabled = false;
   }
@@ -502,6 +595,9 @@ async function pinToCurrentTab() {
       pinnedTabId = tab.id;
       tabDot.className = "dot ok";
       tabLbl.textContent = (tab.title || "").slice(0, 25) || new URL(tab.url).hostname;
+      // Bind this tab's deterministic session (no-op until the gateway hello has
+      // set mainSessionKey; handleHelloOk also calls bindTabSession).
+      bindTabSession();
     }
   } catch {}
 }

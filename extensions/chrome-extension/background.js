@@ -899,6 +899,16 @@ async function handleForwardCdpCommand(msg) {
 // ---------------------------------------------------------------------------
 
 async function attachTab(tabId, opts = {}) {
+  // Idempotent guard: a tab that is already attached must NOT be attached again.
+  // A second Target.attachedToTarget for the same targetId makes the gateway's
+  // playwright throw "Duplicate target" and crash the browser service (which
+  // then corrupts tab enumeration until a gateway restart). Re-attach requests
+  // (e.g. a double Ctrl+Shift+Y) return the existing attachment instead.
+  const existing = tabs.get(tabId);
+  if (existing?.state === "connected" && existing.sessionId && existing.targetId) {
+    return { sessionId: existing.sessionId, targetId: existing.targetId };
+  }
+
   const debuggee = { tabId };
   await chrome.debugger.attach(debuggee, "1.3");
   await chrome.debugger.sendCommand(debuggee, "Page.enable").catch(() => {});
@@ -1460,6 +1470,16 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     handleRequestContext(msg.tabId)
       .then(sendResponse)
       .catch((e) => sendResponse({ success: false, error: String(e) }));
+    return true;
+  }
+
+  // Side panel: resolve a tab's CDP targetId (from the attached-tabs map) so the
+  // panel can bind a turn to its pinned tab before sending.
+  if (msg.type === "getTargetId") {
+    const entry = tabs.get(msg.tabId);
+    sendResponse({
+      targetId: entry && entry.state === "connected" ? entry.targetId || null : null,
+    });
     return true;
   }
 
