@@ -155,6 +155,9 @@ function renderText(text) {
   s = s.replace(/```([\s\S]*?)```/g, (_, code) => "<pre>" + code.trim() + "</pre>");
   s = s.replace(/`([^`]+)`/g, "<code>$1</code>");
   s = s.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  // Preserve the model's line/paragraph breaks instead of collapsing them into
+  // one stacked block.
+  s = s.replace(/\n/g, "<br>");
   return s;
 }
 
@@ -466,16 +469,29 @@ function handleChatEvent(payload) {
     const text = payload.deltaText || "";
     if (full == null && !text) return;
 
+    // Bubble boundaries: a new run always starts a fresh bubble. A `replace`
+    // whose text DIVERGES from the current bubble is a genuinely new segment
+    // (assistant commentary resuming after a tool call) → persist the old bubble
+    // and start a new one so inter-tool commentary is kept. A `replace` that
+    // still extends/repeats the current text is just a re-broadcast/correction
+    // → update in place (otherwise we spawn duplicate bubbles).
+    const incoming = full != null ? full : text;
     if (!streamingEl || currentRunId !== payload.runId) {
+      if (streamingEl) streamingEl.classList.remove("streaming");
       currentRunId = payload.runId;
-      streamingText = "";
       streamingEl = addMessage("assistant", "");
       streamingEl.classList.add("streaming");
+      streamingText = incoming;
+    } else if (payload.replace && streamingText && !incoming.startsWith(streamingText)) {
+      streamingEl.classList.remove("streaming");
+      streamingEl = addMessage("assistant", "");
+      streamingEl.classList.add("streaming");
+      streamingText = incoming;
+    } else if (full != null) {
+      streamingText = full;
+    } else {
+      streamingText += text;
     }
-
-    if (full != null) streamingText = full;
-    else if (payload.replace) streamingText = text;
-    else streamingText += text;
     streamingEl.innerHTML = renderText(streamingText);
     messagesEl.scrollTop = messagesEl.scrollHeight;
   }
