@@ -294,10 +294,22 @@ export function startExtensionBridgeServer(opts: {
           const sid: ExtSessionId = inner.params?.sessionId;
           const ti: TargetInfo = inner.params?.targetInfo || {};
           const tid: TargetId = ti.targetId || sid;
-          const known = targets.has(tid);
-          targets.set(tid, { sessionId: sid, targetInfo: ti });
-          if (!known) log("tab attached: " + (ti.url || ""));
-          for (const pw of pwSockets) announceTo(pw, tid);
+          // Only register/announce real page targets. Workers, service-workers,
+          // blob: and cross-origin iframe sub-targets must NOT be announced as
+          // pages (announceTo forces type:"page"), or Playwright treats each as a
+          // top-level page and the next snapshot hangs on the whole storm — heavy
+          // flows (e.g. signup) spawn ~14 of them. Same-origin iframes are reached
+          // via the page\u0027s own frame tree, so nothing is lost.
+          const ttype = String(ti.type || "page");
+          const turl = String(ti.url || "");
+          if (ttype === "page" && !turl.startsWith("blob:")) {
+            const known = targets.has(tid);
+            targets.set(tid, { sessionId: sid, targetInfo: ti });
+            if (!known) log("tab attached: " + (ti.url || ""));
+            for (const pw of pwSockets) announceTo(pw, tid);
+          } else {
+            log("skip non-page target: " + ttype + " " + turl.slice(0, 40));
+          }
         } else if (
           inner.method === "Target.detachedFromTarget" ||
           inner.method === "detachedFromTarget"
